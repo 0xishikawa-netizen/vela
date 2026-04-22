@@ -1,0 +1,51 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@import 'tailwindcss';
+
+:root {
+  --bg: #080a0e;
+  --fg: #e9eaee;
+  --muted: #8b919f;
+  --muted-2: #5c6370;
+  --border: rgba(255, 255, 255, 0.07);
+  --accent: #7eb8a3;
+  --accent-muted: rgba(126, 184, 163, 0.12);
+  --surface: #0f1218;
+  --surface-2: #161a24;
+  --sidebar: #0c0e14;
+  --timeline-bg: #06080c;
+  --clip-video: rgba(126, 184, 163, 0.2);
+  --clip-audio: rgba(90, 150, 200, 0.2);
+  --clip-telop: rgba(180, 140, 220, 0.2);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family:
+    'Noto Sans JP',
+    ui-sans-serif,
+    sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}

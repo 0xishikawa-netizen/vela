@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build & package output (electron-vite / electron-builder)
+out/
+dist/
+release/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS & editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets (create .env.example without values if needed)
+.env
+.env.local
+.env.*.local
+
+# Test / coverage (if added later)
+coverage/
