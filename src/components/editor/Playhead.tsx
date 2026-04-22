@@ -14,9 +14,16 @@ export default function Playhead({ currentTime, zoom, scrollLeft, height, onSeek
       className="pointer-events-none absolute left-0 top-0 z-20"
       style={{ transform: `translateX(${x}px)`, height }}
     >
+      {/* Handle (diamond shape) */}
       <div
-        className="pointer-events-auto absolute -top-1 left-0 h-3 w-3 -translate-x-1/2 cursor-ew-resize rounded-sm"
-        style={{ background: 'var(--accent)' }}
+        className="pointer-events-auto absolute -top-1 left-0 -translate-x-1/2 cursor-ew-resize"
+        style={{
+          width: 12,
+          height: 12,
+          background: 'var(--accent)',
+          clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
+          boxShadow: '0 0 6px var(--accent)',
+        }}
         onMouseDown={(e) => {
           e.preventDefault()
           const startX = e.clientX
@@ -33,7 +40,17 @@ export default function Playhead({ currentTime, zoom, scrollLeft, height, onSeek
           window.addEventListener('mouseup', onUp)
         }}
       />
-      <div className="absolute left-0 top-2 w-px" style={{ height: height - 8, background: 'var(--accent)' }} />
+
+      {/* Line */}
+      <div
+        className="absolute left-0 w-px"
+        style={{
+          top: 11,
+          height: height - 11,
+          background: 'linear-gradient(to bottom, var(--accent), rgba(0,200,240,0.3))',
+          boxShadow: '0 0 4px rgba(0,200,240,0.5)',
+        }}
+      />
     </div>
   )
 }

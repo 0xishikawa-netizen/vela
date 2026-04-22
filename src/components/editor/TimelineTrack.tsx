@@ -13,6 +13,12 @@ type Props = {
   onSplitAt: (clipId: string, time: number) => void
 }
 
+const TRACK_ACCENT: Record<string, string> = {
+  video: 'rgba(0,200,240,0.06)',
+  audio: 'rgba(52,211,153,0.06)',
+  telop: 'rgba(139,92,246,0.06)',
+}
+
 export default function TimelineTrack({
   track,
   zoom,
@@ -26,8 +32,11 @@ export default function TimelineTrack({
 }: Props) {
   return (
     <div
-      className="relative h-11 border-b"
-      style={{ borderColor: 'var(--border)', background: 'var(--timeline-bg)' }}
+      className="relative h-11"
+      style={{
+        borderBottom: '1px solid var(--border)',
+        background: TRACK_ACCENT[track.type] ?? 'var(--timeline-bg)',
+      }}
     >
       {track.clips.map((c) => (
         <TimelineClip

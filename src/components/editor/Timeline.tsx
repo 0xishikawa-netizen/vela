@@ -8,6 +8,18 @@ import TimelineRuler from './TimelineRuler'
 import TimelineTrack from './TimelineTrack'
 import Playhead from './Playhead'
 
+const TRACK_TYPE_ICON: Record<string, string> = {
+  video: '▶',
+  audio: '♪',
+  telop: 'T',
+}
+
+const TRACK_TYPE_COLOR: Record<string, string> = {
+  video: 'rgba(0,200,240,0.7)',
+  audio: 'rgba(52,211,153,0.7)',
+  telop: 'rgba(139,92,246,0.7)',
+}
+
 export default function Timeline() {
   const current = useProjectStore((s) => s.current)
   const moveClip = useProjectStore((s) => s.moveClip)
@@ -62,22 +74,42 @@ export default function Timeline() {
   const totalH = 28 + trackRows.length * 44
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col border-t" style={{ borderColor: 'var(--border)' }}>
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      style={{ borderTop: '1px solid var(--border)', background: 'var(--timeline-bg)' }}
+    >
       <div className="flex min-h-0 flex-1">
+        {/* Track labels */}
         <div
-          className="w-36 shrink-0 border-r pt-7"
-          style={{ borderColor: 'var(--border)', background: 'var(--sidebar)' }}
+          className="w-36 shrink-0 pt-7"
+          style={{
+            borderRight: '1px solid var(--border)',
+            background: 'var(--sidebar)',
+          }}
         >
           {trackRows.map((t) => (
             <div
               key={t.id}
-              className="flex h-11 items-center border-b px-2 text-[11px]"
-              style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+              className="flex h-11 items-center gap-2 border-b px-3"
+              style={{ borderColor: 'var(--border)' }}
             >
-              <span className="truncate">{t.name}</span>
+              <span
+                className="w-5 h-5 rounded flex items-center justify-center shrink-0 text-[10px] font-bold"
+                style={{
+                  background: `${TRACK_TYPE_COLOR[t.type] ?? 'rgba(255,255,255,0.1)'}20`,
+                  color: TRACK_TYPE_COLOR[t.type] ?? 'var(--muted)',
+                }}
+              >
+                {TRACK_TYPE_ICON[t.type] ?? '?'}
+              </span>
+              <span className="truncate text-[11px] font-medium" style={{ color: 'var(--muted)' }}>
+                {t.name}
+              </span>
             </div>
           ))}
         </div>
+
+        {/* Scrollable timeline area */}
         <div
           ref={scrollRef}
           className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden"
@@ -85,6 +117,7 @@ export default function Timeline() {
           onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
         >
           <div style={{ width: contentWidth, minHeight: totalH }} className="relative">
+            {/* Ruler */}
             <div className="sticky left-0 top-0 z-10" style={{ width: contentWidth }}>
               <TimelineRuler
                 duration={current.duration || 120}
@@ -93,6 +126,8 @@ export default function Timeline() {
                 width={scrollRef.current?.clientWidth ?? 800}
               />
             </div>
+
+            {/* Tracks */}
             <div
               className="relative"
               style={{ height: trackRows.length * 44 }}

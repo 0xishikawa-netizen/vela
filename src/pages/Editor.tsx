@@ -15,6 +15,14 @@ import { useEditorStore } from '../store/editorStore'
 import { usePlayback } from '../hooks/usePlayback'
 import { useKeyboardShortcuts } from '../hooks/useKeyboard'
 
+const PANEL_TABS = [
+  { id: 'properties', label: 'Props' },
+  { id: 'text', label: 'Text' },
+  { id: 'effects', label: 'Look' },
+  { id: 'audio', label: 'Audio' },
+  { id: 'ai', label: 'AI' },
+] as const
+
 export default function Editor() {
   usePlayback()
   useKeyboardShortcuts()
@@ -25,52 +33,92 @@ export default function Editor() {
     <div className="flex h-screen flex-col" style={{ background: 'var(--bg)' }}>
       <TitleBar />
       <Toolbar onExport={() => setExportOpen(true)} />
+
+      {/* Main body */}
       <div className="flex min-h-0 flex-1">
-        <div className="no-drag w-56 shrink-0">
+        {/* Left: Media panel */}
+        <div
+          className="no-drag shrink-0 w-52 flex flex-col"
+          style={{ borderRight: '1px solid var(--border)', background: 'var(--sidebar)' }}
+        >
           <MediaPanel />
         </div>
+
+        {/* Center: Preview + Timeline */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex shrink-0 items-start gap-3 border-b p-3" style={{ borderColor: 'var(--border)' }}>
-            <Preview />
+          {/* Preview area */}
+          <div
+            className="flex shrink-0 items-center gap-0"
+            style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}
+          >
+            <div className="flex-1 flex items-center justify-center p-3">
+              <Preview />
+            </div>
+            <div
+              className="w-px self-stretch"
+              style={{ background: 'var(--border)' }}
+            />
             <Transport />
           </div>
+
+          {/* Timeline */}
           <Timeline />
         </div>
+
+        {/* Right: Properties panel */}
         <aside
-          className="no-drag w-72 shrink-0 overflow-y-auto border-l"
-          style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
+          className="no-drag w-72 shrink-0 flex flex-col"
+          style={{ borderLeft: '1px solid var(--border)', background: 'var(--surface)' }}
         >
-          <div className="flex border-b text-[11px]" style={{ borderColor: 'var(--border)' }}>
-            {(
-              [
-                ['properties', 'プロパティ'],
-                ['text', 'テロップ'],
-                ['effects', 'ルック'],
-                ['audio', '音声'],
-                ['ai', 'AI'],
-              ] as const
-            ).map(([id, label]) => (
+          {/* Tabs */}
+          <div
+            className="flex shrink-0"
+            style={{ borderBottom: '1px solid var(--border)', background: 'var(--sidebar)' }}
+          >
+            {PANEL_TABS.map(({ id, label }) => (
               <button
                 key={id}
                 type="button"
-                className="flex-1 py-2"
+                className="relative flex-1 py-2.5 text-[11px] font-medium"
                 style={{
-                  background: activePanel === id ? 'var(--surface-2)' : 'transparent',
-                  color: activePanel === id ? 'var(--fg)' : 'var(--muted)',
+                  color: activePanel === id ? 'var(--accent)' : 'var(--muted)',
+                  background: 'transparent',
+                }}
+                onMouseEnter={(e) => {
+                  if (activePanel !== id) e.currentTarget.style.color = 'var(--fg)'
+                }}
+                onMouseLeave={(e) => {
+                  if (activePanel !== id) e.currentTarget.style.color = 'var(--muted)'
                 }}
                 onClick={() => useEditorStore.getState().setActivePanel(id)}
               >
                 {label}
+                {activePanel === id && (
+                  <span
+                    className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full"
+                    style={{
+                      width: 18,
+                      height: 2,
+                      background: 'var(--accent)',
+                      boxShadow: '0 0 6px var(--accent)',
+                    }}
+                  />
+                )}
               </button>
             ))}
           </div>
-          {activePanel === 'properties' && <PropertiesPanel />}
-          {activePanel === 'text' && <TextPanel />}
-          {activePanel === 'effects' && <EffectsPanel />}
-          {activePanel === 'audio' && <AudioPanel />}
-          {activePanel === 'ai' && <AutoCaptionPanel />}
+
+          {/* Panel content */}
+          <div className="flex-1 overflow-y-auto">
+            {activePanel === 'properties' && <PropertiesPanel />}
+            {activePanel === 'text' && <TextPanel />}
+            {activePanel === 'effects' && <EffectsPanel />}
+            {activePanel === 'audio' && <AudioPanel />}
+            {activePanel === 'ai' && <AutoCaptionPanel />}
+          </div>
         </aside>
       </div>
+
       <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
     </div>
   )

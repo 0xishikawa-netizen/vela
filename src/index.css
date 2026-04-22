@@ -1,22 +1,40 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @import 'tailwindcss';
 
 :root {
-  --bg: #080a0e;
-  --fg: #e9eaee;
-  --muted: #8b919f;
-  --muted-2: #5c6370;
-  --border: rgba(255, 255, 255, 0.07);
-  --accent: #7eb8a3;
-  --accent-muted: rgba(126, 184, 163, 0.12);
-  --surface: #0f1218;
-  --surface-2: #161a24;
-  --sidebar: #0c0e14;
-  --timeline-bg: #06080c;
-  --clip-video: rgba(126, 184, 163, 0.2);
-  --clip-audio: rgba(90, 150, 200, 0.2);
-  --clip-telop: rgba(180, 140, 220, 0.2);
+  --bg: #030508;
+  --fg: #e8eaf4;
+  --muted: #5a6478;
+  --muted-2: #3a4155;
+  --border: rgba(255, 255, 255, 0.055);
+  --border-bright: rgba(255, 255, 255, 0.12);
+
+  /* Accents */
+  --accent: #00c8f0;
+  --accent-dim: rgba(0, 200, 240, 0.15);
+  --accent-glow: rgba(0, 200, 240, 0.25);
+  --accent-2: #8b5cf6;
+  --accent-2-dim: rgba(139, 92, 246, 0.15);
+
+  /* Surfaces */
+  --surface: #080c14;
+  --surface-2: #0d1220;
+  --surface-3: #121828;
+  --sidebar: #06090f;
+  --timeline-bg: #040710;
+
+  /* Clips */
+  --clip-video: rgba(0, 200, 240, 0.18);
+  --clip-video-border: rgba(0, 200, 240, 0.5);
+  --clip-audio: rgba(52, 211, 153, 0.18);
+  --clip-audio-border: rgba(52, 211, 153, 0.5);
+  --clip-telop: rgba(139, 92, 246, 0.18);
+  --clip-telop-border: rgba(139, 92, 246, 0.5);
+
+  /* Glass */
+  --glass: rgba(8, 12, 24, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.07);
 }
 
 * {
@@ -28,12 +46,10 @@
 body {
   background: var(--bg);
   color: var(--fg);
-  font-family:
-    'Noto Sans JP',
-    ui-sans-serif,
-    sans-serif;
+  font-family: 'Inter', 'Noto Sans JP', ui-sans-serif, sans-serif;
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   user-select: none;
   overflow: hidden;
 }
@@ -48,4 +64,97 @@ body {
 
 .mono {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Glow effects */
+.glow-cyan {
+  box-shadow: 0 0 20px rgba(0, 200, 240, 0.2), 0 0 40px rgba(0, 200, 240, 0.08);
+}
+.glow-cyan-sm {
+  box-shadow: 0 0 8px rgba(0, 200, 240, 0.3);
+}
+
+/* Grid background pattern */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Smooth transitions */
+button {
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  outline: none;
+  border: none;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+}
+
+/* Accent button */
+.btn-accent {
+  background: var(--accent);
+  color: #020406;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.btn-accent:hover {
+  background: #22d3f0;
+  box-shadow: 0 0 16px rgba(0, 200, 240, 0.35);
+}
+
+/* Ghost button */
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg);
+  border-color: var(--border-bright);
+}
+
+/* Panel tab active indicator */
+.tab-active {
+  color: var(--accent) !important;
+  position: relative;
+}
+.tab-active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  box-shadow: 0 0 6px var(--accent);
 }

@@ -52,35 +52,106 @@ export default function MediaPanel() {
     }
   }
 
+  const typeIcon = (type: string) => {
+    if (type === 'audio') return '♪'
+    if (type === 'image') return '◻'
+    return '▶'
+  }
+
+  const typeColor = (type: string) => {
+    if (type === 'audio') return 'rgba(52,211,153,0.7)'
+    if (type === 'image') return 'rgba(139,92,246,0.7)'
+    return 'rgba(0,200,240,0.7)'
+  }
+
   return (
-    <div className="flex h-full flex-col border-r" style={{ borderColor: 'var(--border)', background: 'var(--sidebar)' }}>
-      <div className="border-b p-2" style={{ borderColor: 'var(--border)' }}>
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="shrink-0 p-3" style={{ borderBottom: '1px solid var(--border)' }}>
+        <div className="mb-2 px-1">
+          <p className="text-[10px] font-semibold tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
+            Media
+          </p>
+        </div>
         <button
           type="button"
-          className="w-full rounded py-1.5 text-xs"
-          style={{ background: 'var(--surface-2)', color: 'var(--fg)' }}
+          className="w-full rounded-lg py-2 text-[11px] font-medium flex items-center justify-center gap-1.5"
+          style={{
+            background: 'var(--surface-2)',
+            border: '1px dashed rgba(255,255,255,0.1)',
+            color: 'var(--muted)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = 'rgba(0,200,240,0.3)'
+            e.currentTarget.style.color = 'var(--accent)'
+            e.currentTarget.style.background = 'var(--accent-dim)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'
+            e.currentTarget.style.color = 'var(--muted)'
+            e.currentTarget.style.background = 'var(--surface-2)'
+          }}
           onClick={() => void pick()}
         >
+          <span style={{ fontSize: 14 }}>＋</span>
           メディアを追加
         </button>
       </div>
-      <div className="flex-1 space-y-2 overflow-auto p-2">
+
+      {/* Media list */}
+      <div className="flex-1 overflow-auto p-2 space-y-1.5">
+        {items.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-24 opacity-30">
+            <span style={{ fontSize: 24 }}>◻</span>
+            <p className="text-[10px] mt-1" style={{ color: 'var(--muted)' }}>メディアなし</p>
+          </div>
+        )}
         {items.map((m) => (
           <button
             key={m.path}
             type="button"
-            className="flex w-full gap-2 rounded border p-1 text-left text-[11px]"
-            style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
+            className="group flex w-full gap-2 rounded-lg p-1.5 text-left"
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border)',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = 'rgba(0,200,240,0.2)'
+              e.currentTarget.style.background = 'var(--surface-3)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'var(--border)'
+              e.currentTarget.style.background = 'var(--surface-2)'
+            }}
             onClick={() => void addToTimeline(m.path, m.type)}
           >
-            {m.thumb ? (
-              <img src={fileUrl(m.thumb)} alt="" className="h-12 w-20 shrink-0 rounded object-cover" />
-            ) : (
-              <div className="h-12 w-20 shrink-0 rounded" style={{ background: 'var(--surface-2)' }} />
-            )}
-            <span className="truncate" style={{ color: 'var(--fg)' }}>
-              {m.name}
-            </span>
+            {/* Thumbnail */}
+            <div className="relative shrink-0 h-10 w-16 rounded overflow-hidden" style={{ background: 'var(--bg)' }}>
+              {m.thumb ? (
+                <img src={fileUrl(m.thumb)} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <div className="h-full w-full flex items-center justify-center" style={{ color: typeColor(m.type), fontSize: 18 }}>
+                  {typeIcon(m.type)}
+                </div>
+              )}
+              {/* Type badge */}
+              <span
+                className="absolute top-0.5 left-0.5 text-[8px] px-0.5 rounded font-bold mono"
+                style={{
+                  background: 'rgba(0,0,0,0.6)',
+                  color: typeColor(m.type),
+                }}
+              >
+                {m.type.toUpperCase()}
+              </span>
+            </div>
+
+            {/* Name */}
+            <div className="min-w-0 flex-1 flex items-center">
+              <span className="truncate text-[11px] leading-tight" style={{ color: 'var(--fg)' }}>
+                {m.name}
+              </span>
+            </div>
           </button>
         ))}
       </div>

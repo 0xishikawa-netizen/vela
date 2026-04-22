@@ -1,6 +1,5 @@
 import type { Clip } from '../../lib/types'
 import { secondsToPx } from '../../lib/timeUtils'
-import clsx from 'clsx'
 
 type Props = {
   clip: Clip
@@ -12,6 +11,16 @@ type Props = {
   onTrimStart: (newSourceStart: number, newTimelineStart: number) => void
   onTrimEnd: (newSourceEnd: number) => void
   onSplitAt: (time: number) => void
+}
+
+function clipColors(type: string) {
+  if (type === 'video' || type === 'image') {
+    return { bg: 'var(--clip-video)', border: 'var(--clip-video-border)', text: '#a8f0ff' }
+  }
+  if (type === 'audio') {
+    return { bg: 'var(--clip-audio)', border: 'var(--clip-audio-border)', text: '#86efac' }
+  }
+  return { bg: 'var(--clip-telop)', border: 'var(--clip-telop-border)', text: '#c4b5fd' }
 }
 
 export default function TimelineClip({
@@ -27,33 +36,26 @@ export default function TimelineClip({
 }: Props) {
   const left = secondsToPx(clip.timelineStart, zoom) - scrollLeft
   const width = Math.max(8, secondsToPx(clip.timelineDuration, zoom))
-
-  const bg =
-    clip.type === 'video' || clip.type === 'image'
-      ? 'var(--clip-video)'
-      : clip.type === 'audio'
-        ? 'var(--clip-audio)'
-        : 'var(--clip-telop)'
+  const colors = clipColors(clip.type)
 
   const label =
     clip.type === 'telop'
-      ? clip.text.slice(0, 12) + (clip.text.length > 12 ? '…' : '')
+      ? clip.text.slice(0, 16) + (clip.text.length > 16 ? '…' : '')
       : clip.type === 'video' || clip.type === 'audio' || clip.type === 'image'
         ? clip.sourcePath.split(/[/\\]/).pop() ?? clip.type
         : ''
 
   return (
     <div
-      className={clsx(
-        'absolute top-1 flex h-[calc(100%-8px)] cursor-grab items-center overflow-hidden rounded border text-[10px]',
-        selected && 'ring-1',
-      )}
+      className="absolute top-1 flex h-[calc(100%-8px)] cursor-grab items-center overflow-hidden rounded-md text-[10px]"
       style={{
         left,
         width,
-        background: bg,
-        borderColor: selected ? 'var(--accent)' : 'var(--border)',
-        color: 'var(--fg)',
+        background: colors.bg,
+        border: `1px solid ${selected ? colors.border : 'rgba(255,255,255,0.08)'}`,
+        color: colors.text,
+        boxShadow: selected ? `0 0 0 1px ${colors.border}, 0 0 10px ${colors.bg}` : 'none',
+        backdropFilter: 'blur(4px)',
       }}
       onMouseDown={(e) => {
         if (e.metaKey || e.ctrlKey) {
@@ -82,10 +84,11 @@ export default function TimelineClip({
         window.addEventListener('mouseup', onUp)
       }}
     >
+      {/* Left trim handle */}
       <div
         data-trim="1"
-        className="absolute bottom-0 left-0 top-0 z-10 w-2 cursor-ew-resize opacity-60 hover:opacity-100"
-        style={{ background: 'rgba(255,255,255,0.15)' }}
+        className="absolute bottom-0 left-0 top-0 z-10 w-2 cursor-ew-resize"
+        style={{ background: `linear-gradient(to right, ${colors.border}, transparent)` }}
         onMouseDown={(e) => {
           e.stopPropagation()
           if (clip.type !== 'video' && clip.type !== 'audio') return
@@ -106,11 +109,14 @@ export default function TimelineClip({
           window.addEventListener('mouseup', onUp)
         }}
       />
-      <span className="pointer-events-none flex-1 truncate px-3">{label}</span>
+
+      <span className="pointer-events-none flex-1 truncate px-3 font-medium">{label}</span>
+
+      {/* Right trim handle */}
       <div
         data-trim="1"
-        className="absolute bottom-0 right-0 top-0 z-10 w-2 cursor-ew-resize opacity-60 hover:opacity-100"
-        style={{ background: 'rgba(255,255,255,0.15)' }}
+        className="absolute bottom-0 right-0 top-0 z-10 w-2 cursor-ew-resize"
+        style={{ background: `linear-gradient(to left, ${colors.border}, transparent)` }}
         onMouseDown={(e) => {
           e.stopPropagation()
           if (clip.type !== 'video' && clip.type !== 'audio') return
