@@ -24,31 +24,64 @@ function getWindow(): BrowserWindow | null {
 
 function resolvePreloadPath(): string {
   const candidates = ['preload.mjs', 'preload.js', 'index.mjs', 'index.js']
-  const base = path.join(__dirname, '../preload')
-  for (const name of candidates) {
-    const full = path.join(base, name)
-    if (existsSync(full)) return full
+  const bases: string[] = [path.join(__dirname, '../preload')]
+  // dev で main の実体パスが想定とずれる場合のフォールバック（プロジェクト直下の out/preload）
+  if (!app.isPackaged) {
+    bases.push(path.join(process.cwd(), 'out', 'preload'))
   }
-  return path.join(base, 'preload.mjs')
+  for (const base of bases) {
+    for (const name of candidates) {
+      const full = path.join(base, name)
+      if (existsSync(full)) return path.resolve(full)
+    }
+  }
+  const fallback = path.resolve(path.join(bases[0]!, 'preload.mjs'))
+  console.error('[vela] preload が見つかりません。探索したディレクトリ:', bases)
+  return fallback
 }
 
 async function createWindow() {
+  const preloadPath = resolvePreloadPath()
+  if (!existsSync(preloadPath)) {
+    console.error('[vela] preload ファイルが存在しません:', preloadPath)
+  } else {
+    console.log('[vela] preload:', preloadPath)
+  }
+
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 960,
     minWidth: 1200,
     minHeight: 700,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
-    backgroundColor: '#080a0e',
+    backgroundColor: '#1a1b20',
+    // sandbox: true だと ESM プリロード（.mjs の import）が使えず API が注入されない（Electron 公式: Sandboxed preload scripts can't use ESM imports）
     webPreferences: {
-      preload: resolvePreloadPath(),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       webSecurity: false,
+      sandbox: false,
     },
   })
 
-  Menu.setApplicationMenu(null)
+  const menu = Menu.buildFromTemplate([
+    {
+      label: app.name,
+      submenu: [
+        { label: `${app.name}について`, role: 'about' },
+        { type: 'separator' },
+        { label: 'サービス', role: 'services' },
+        { type: 'separator' },
+        { label: `${app.name}を隠す`, role: 'hide' },
+        { label: 'ほかを隠す', role: 'hideOthers' },
+        { label: 'すべてを表示', role: 'unhide' },
+        { type: 'separator' },
+        { label: `${app.name}を終了`, role: 'quit' },
+      ],
+    },
+  ])
+  Menu.setApplicationMenu(menu)
 
   if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
     await mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)

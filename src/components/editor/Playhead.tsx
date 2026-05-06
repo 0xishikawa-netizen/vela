@@ -47,8 +47,8 @@ export default function Playhead({ currentTime, zoom, scrollLeft, height, onSeek
         style={{
           top: 11,
           height: height - 11,
-          background: 'linear-gradient(to bottom, var(--accent), rgba(0,200,240,0.3))',
-          boxShadow: '0 0 4px rgba(0,200,240,0.5)',
+          background: 'linear-gradient(to bottom, var(--accent), rgba(132,181,169,0.32))',
+          boxShadow: '0 0 4px rgba(132,181,169,0.28)',
         }}
       />
     </div>

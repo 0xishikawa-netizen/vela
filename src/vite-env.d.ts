@@ -4,7 +4,8 @@ import type { ElectronAPI } from './electron'
 
 declare global {
   interface Window {
-    electronAPI: ElectronAPI
+    /** preload で注入。ブラウザ単体では undefined */
+    electronAPI?: ElectronAPI
   }
 }
 

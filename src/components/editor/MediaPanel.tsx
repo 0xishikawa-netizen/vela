@@ -8,22 +8,33 @@ export default function MediaPanel() {
   const addClip = useProjectStore((s) => s.addClip)
   const currentTime = useEditorStore((s) => s.currentTime)
   const [items, setItems] = useState<{ path: string; thumb?: string; name: string; type: string }[]>([])
+  const [error, setError] = useState<string | null>(null)
 
   const pick = async () => {
-    const paths = await window.electronAPI.openMediaDialog()
-    if (!paths?.length) return
-    const next: { path: string; thumb?: string; name: string; type: string }[] = []
-    for (const p of paths) {
-      const info = await window.electronAPI.getMediaInfo(p)
-      let thumb: string | undefined
-      try {
-        thumb = await window.electronAPI.getThumbnail(p, 0)
-      } catch {
-        /* ignore */
+    setError(null)
+    try {
+      const paths = await window.electronAPI.openMediaDialog()
+      if (!paths?.length) return
+      const next: { path: string; thumb?: string; name: string; type: string }[] = []
+      for (const p of paths) {
+        try {
+          const info = await window.electronAPI.getMediaInfo(p)
+          let thumb: string | undefined
+          try {
+            thumb = await window.electronAPI.getThumbnail(p, 0)
+          } catch {
+            /* ignore */
+          }
+          next.push({ path: p, thumb, name: info.name, type: info.type })
+        } catch {
+          const name = p.split('/').pop() ?? p
+          setError(`"${name}" を読み込めませんでした`)
+        }
       }
-      next.push({ path: p, thumb, name: info.name, type: info.type })
+      if (next.length > 0) setItems((prev) => [...next, ...prev])
+    } catch {
+      setError('ファイルダイアログを開けませんでした')
     }
-    setItems((prev) => [...next, ...prev])
   }
 
   const addToTimeline = async (path: string, type: string) => {
@@ -59,36 +70,39 @@ export default function MediaPanel() {
   }
 
   const typeColor = (type: string) => {
-    if (type === 'audio') return 'rgba(52,211,153,0.7)'
-    if (type === 'image') return 'rgba(139,92,246,0.7)'
-    return 'rgba(0,200,240,0.7)'
+    if (type === 'audio') return 'rgba(126,158,140,0.72)'
+    if (type === 'image') return 'rgba(180,171,201,0.72)'
+    return 'rgba(132,181,169,0.72)'
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-w-0 flex-col">
       {/* Header */}
       <div className="shrink-0 p-3" style={{ borderBottom: '1px solid var(--border)' }}>
         <div className="mb-2 px-1">
-          <p className="text-[10px] font-semibold tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
-            Media
-          </p>
+          <p className="ui-section-title">メディア</p>
         </div>
+        {error && (
+          <p className="mb-2 px-1 text-[12px] font-medium leading-snug" style={{ color: '#e8a0a0' }}>
+            {error}
+          </p>
+        )}
         <button
           type="button"
-          className="w-full rounded-lg py-2 text-[11px] font-medium flex items-center justify-center gap-1.5"
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg py-2.5 text-[13px] font-semibold"
           style={{
             background: 'var(--surface-2)',
             border: '1px dashed rgba(255,255,255,0.1)',
-            color: 'var(--muted)',
+            color: 'var(--label)',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = 'rgba(0,200,240,0.3)'
+            e.currentTarget.style.borderColor = 'rgba(132,181,169,0.32)'
             e.currentTarget.style.color = 'var(--accent)'
             e.currentTarget.style.background = 'var(--accent-dim)'
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'
-            e.currentTarget.style.color = 'var(--muted)'
+            e.currentTarget.style.color = 'var(--label)'
             e.currentTarget.style.background = 'var(--surface-2)'
           }}
           onClick={() => void pick()}
@@ -103,7 +117,7 @@ export default function MediaPanel() {
         {items.length === 0 && (
           <div className="flex flex-col items-center justify-center h-24 opacity-30">
             <span style={{ fontSize: 24 }}>◻</span>
-            <p className="text-[10px] mt-1" style={{ color: 'var(--muted)' }}>メディアなし</p>
+            <p className="mt-1 text-[12px] font-medium" style={{ color: 'var(--label)' }}>メディアなし</p>
           </div>
         )}
         {items.map((m) => (
@@ -116,7 +130,7 @@ export default function MediaPanel() {
               border: '1px solid var(--border)',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(0,200,240,0.2)'
+              e.currentTarget.style.borderColor = 'rgba(132,181,169,0.22)'
               e.currentTarget.style.background = 'var(--surface-3)'
             }}
             onMouseLeave={(e) => {

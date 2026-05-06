@@ -109,16 +109,15 @@ export default function AutoCaptionPanel() {
   }
 
   return (
-    <div className="space-y-3 p-3 text-xs">
-      {!videoPath && <p style={{ color: 'var(--muted)' }}>映像トラックに動画クリップを置いてから実行してください。</p>}
-      <label className="block" style={{ color: 'var(--muted)' }}>
-        モデル
-        <select
-          className="mt-1 w-full rounded border px-1 py-1"
-          style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--fg)' }}
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-        >
+    <div className="min-w-0 space-y-4 p-3 text-[13px]">
+      {!videoPath && (
+        <p className="text-[12px] font-medium leading-relaxed" style={{ color: 'var(--label)' }}>
+          映像トラックに動画クリップを置いてから実行してください。
+        </p>
+      )}
+      <label className="block min-w-0">
+        <span className="ui-label">モデル</span>
+        <select className="ui-select mt-1" value={model} onChange={(e) => setModel(e.target.value)}>
           {WHISPER_MODELS.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}
@@ -129,22 +128,16 @@ export default function AutoCaptionPanel() {
       {!hasModel && (
         <button
           type="button"
-          className="w-full rounded py-1.5 text-xs"
-          style={{ background: 'var(--surface-2)' }}
+          className="btn-ghost w-full py-2 text-[13px] font-medium"
           disabled={downloading}
           onClick={() => void download()}
         >
           {downloading ? `ダウンロード ${dlPct}%` : 'モデルをダウンロード'}
         </button>
       )}
-      <label className="block" style={{ color: 'var(--muted)' }}>
-        言語
-        <select
-          className="mt-1 w-full rounded border px-1 py-1"
-          style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--fg)' }}
-          value={lang}
-          onChange={(e) => setLang(e.target.value)}
-        >
+      <label className="block min-w-0">
+        <span className="ui-label">言語</span>
+        <select className="ui-select mt-1" value={lang} onChange={(e) => setLang(e.target.value)}>
           <option value="ja">日本語</option>
           <option value="en">英語</option>
           <option value="auto">自動</option>
@@ -152,19 +145,17 @@ export default function AutoCaptionPanel() {
       </label>
       <button
         type="button"
-        className="w-full rounded py-2 text-xs font-medium"
-        style={{ background: 'var(--accent)', color: '#0a0c10' }}
+        className="btn-accent w-full rounded-lg py-2.5 text-[13px] font-semibold"
         disabled={busy || !videoPath || !hasModel}
         onClick={() => void run()}
       >
         {busy ? `生成中 ${trPct}%` : '字幕を生成'}
       </button>
       <CaptionEditor captions={captions} onChange={setCaptions} />
-      <div className="flex gap-2">
+      <div className="grid min-w-0 grid-cols-1 gap-2 min-[380px]:grid-cols-2">
         <button
           type="button"
-          className="flex-1 rounded py-1.5 text-[11px]"
-          style={{ background: 'var(--surface-2)' }}
+          className="btn-ghost min-w-0 py-2 text-[12px] font-medium"
           disabled={!captions.length}
           onClick={exportSrt}
         >
@@ -172,8 +163,7 @@ export default function AutoCaptionPanel() {
         </button>
         <button
           type="button"
-          className="flex-1 rounded py-1.5 text-[11px]"
-          style={{ background: 'var(--surface-2)' }}
+          className="btn-ghost min-w-0 py-2 text-[12px] font-medium"
           disabled={!captions.length}
           onClick={addAsTelops}
         >

@@ -10,6 +10,7 @@ interface EditorStore {
   selectedTrackId: string | null
   activePanel: PanelType
   scrollLeft: number
+  exportModalOpen: boolean
 
   setCurrentTime: (t: number) => void
   setPlaying: (v: boolean) => void
@@ -18,6 +19,9 @@ interface EditorStore {
   deselect: () => void
   setActivePanel: (p: PanelType) => void
   setScrollLeft: (x: number) => void
+  setExportModalOpen: (v: boolean) => void
+  /** 新規プロジェクト作成・別プロジェクトを開いたときに呼ぶ */
+  resetSession: () => void
 }
 
 export const useEditorStore = create<EditorStore>((set) => ({
@@ -28,6 +32,19 @@ export const useEditorStore = create<EditorStore>((set) => ({
   selectedTrackId: null,
   activePanel: 'properties',
   scrollLeft: 0,
+  exportModalOpen: false,
+
+  resetSession: () =>
+    set({
+      currentTime: 0,
+      isPlaying: false,
+      zoom: 80,
+      selectedClipId: null,
+      selectedTrackId: null,
+      activePanel: 'properties',
+      scrollLeft: 0,
+      exportModalOpen: false,
+    }),
 
   setCurrentTime: (t) => set({ currentTime: Math.max(0, t) }),
   setPlaying: (v) => set({ isPlaying: v }),
@@ -37,4 +54,5 @@ export const useEditorStore = create<EditorStore>((set) => ({
   deselect: () => set({ selectedClipId: null, selectedTrackId: null }),
   setActivePanel: (p) => set({ activePanel: p }),
   setScrollLeft: (x) => set({ scrollLeft: Math.max(0, x) }),
+  setExportModalOpen: (v) => set({ exportModalOpen: v }),
 }))

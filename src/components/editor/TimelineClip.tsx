@@ -15,12 +15,12 @@ type Props = {
 
 function clipColors(type: string) {
   if (type === 'video' || type === 'image') {
-    return { bg: 'var(--clip-video)', border: 'var(--clip-video-border)', text: '#a8f0ff' }
+    return { bg: 'var(--clip-video)', border: 'var(--clip-video-border)', text: '#d4ebe6' }
   }
   if (type === 'audio') {
-    return { bg: 'var(--clip-audio)', border: 'var(--clip-audio-border)', text: '#86efac' }
+    return { bg: 'var(--clip-audio)', border: 'var(--clip-audio-border)', text: '#d4eadc' }
   }
-  return { bg: 'var(--clip-telop)', border: 'var(--clip-telop-border)', text: '#c4b5fd' }
+  return { bg: 'var(--clip-telop)', border: 'var(--clip-telop-border)', text: '#e8e4f5' }
 }
 
 export default function TimelineClip({

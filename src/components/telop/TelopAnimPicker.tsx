@@ -16,12 +16,11 @@ type Props = {
 
 export default function TelopAnimPicker({ value, onChange }: Props) {
   return (
-    <div className="grid grid-cols-2 gap-2 text-[11px]">
-      <label className="col-span-2" style={{ color: 'var(--muted)' }}>
-        イン
+    <div className="grid grid-cols-2 gap-3 text-[13px]">
+      <label className="col-span-2 block min-w-0">
+        <span className="ui-label">イン</span>
         <select
-          className="mt-1 w-full rounded border px-1 py-1"
-          style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--fg)' }}
+          className="ui-select mt-1 w-full min-w-0"
           value={value.in}
           onChange={(e) => onChange({ ...value, in: e.target.value as TelopAnimationType })}
         >
@@ -32,26 +31,24 @@ export default function TelopAnimPicker({ value, onChange }: Props) {
           ))}
         </select>
       </label>
-      <label style={{ color: 'var(--muted)' }}>
-        イン秒
+      <label className="block min-w-0">
+        <span className="ui-label">イン秒</span>
         <input
           type="number"
           step={0.1}
           min={0}
-          className="mt-1 w-full rounded border px-1 py-1"
-          style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--fg)' }}
+          className="ui-input mt-1 min-w-0"
           value={value.inDuration}
           onChange={(e) => onChange({ ...value, inDuration: Number(e.target.value) })}
         />
       </label>
-      <label style={{ color: 'var(--muted)' }}>
-        アウト秒
+      <label className="block min-w-0">
+        <span className="ui-label">アウト秒</span>
         <input
           type="number"
           step={0.1}
           min={0}
-          className="mt-1 w-full rounded border px-1 py-1"
-          style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--fg)' }}
+          className="ui-input mt-1 min-w-0"
           value={value.outDuration}
           onChange={(e) => onChange({ ...value, outDuration: Number(e.target.value) })}
         />

@@ -28,7 +28,7 @@ export default function TimelineRuler({ duration, zoom, scrollLeft, width }: Pro
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
-          background: 'linear-gradient(to bottom, rgba(0,200,240,0.03) 0%, transparent 100%)',
+          background: 'linear-gradient(to bottom, rgba(132,181,169,0.06) 0%, transparent 100%)',
         }}
       />
 
@@ -49,7 +49,7 @@ export default function TimelineRuler({ duration, zoom, scrollLeft, width }: Pro
             style={{
               width: 1,
               height: 6,
-              background: t % 5 === 0 ? 'rgba(0,200,240,0.3)' : 'rgba(255,255,255,0.1)',
+              background: t % 5 === 0 ? 'rgba(132,181,169,0.32)' : 'rgba(255,255,255,0.11)',
             }}
           />
         </div>

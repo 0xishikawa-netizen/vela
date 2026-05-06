@@ -2,6 +2,7 @@ import type { Caption, MediaFile, Project } from './lib/types'
 
 export interface ElectronAPI {
   openMediaDialog: () => Promise<string[] | undefined>
+  openLutDialog: () => Promise<string | undefined>
   saveExportDialog: (name: string) => Promise<string | undefined>
   showItemInFolder: (filePath: string) => Promise<void>
 

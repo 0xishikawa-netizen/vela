@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   openMediaDialog: () => ipcRenderer.invoke('dialog:openMedia'),
+  openLutDialog: () => ipcRenderer.invoke('dialog:openLut'),
   saveExportDialog: (name: string) => ipcRenderer.invoke('dialog:saveExport', name),
   showItemInFolder: (filePath: string) => ipcRenderer.invoke('shell:showItem', filePath),
 

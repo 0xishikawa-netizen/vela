@@ -4,6 +4,7 @@ import { v4 as uuid } from 'uuid'
 import type { Project, Track, Clip, TrackType, AspectRatio, VideoClip, AudioClip, TelopClip } from '../lib/types'
 import { DEFAULT_COLOR_GRADE, DEFAULT_TRANSITION, DEFAULT_TELOP_ANIMATION, DEFAULT_TELOP_STYLE } from '../lib/types'
 import { useHistoryStore } from './historyStore'
+import { useEditorStore } from './editorStore'
 
 interface ProjectStore {
   projects: Project[]
@@ -53,13 +54,24 @@ export const useProjectStore = create<ProjectStore>()(
     current: null,
 
     loadProjects: async () => {
-      const list = await window.electronAPI.listProjects()
+      const api = typeof window !== 'undefined' ? window.electronAPI : undefined
+      if (!api?.listProjects) {
+        set((s) => {
+          s.projects = []
+        })
+        return
+      }
+      const list = await api.listProjects()
       set((s) => {
         s.projects = list as Project[]
       })
     },
 
     createProject: async (name, aspectRatio, fps) => {
+      const api = typeof window !== 'undefined' ? window.electronAPI : undefined
+      if (!api?.saveProject) {
+        throw new Error('Electron の API が使えません。ターミナルで npm run dev から起動してください。')
+      }
       const project: Project = {
         id: uuid(),
         name,
@@ -71,7 +83,8 @@ export const useProjectStore = create<ProjectStore>()(
         resolution: ASPECT_RATIOS[aspectRatio],
         tracks: makeDefaultTracks(),
       }
-      await window.electronAPI.saveProject(project.id, project)
+      await api.saveProject(project.id, project)
+      useEditorStore.getState().resetSession()
       set((s) => {
         s.projects.unshift(project)
         s.current = project
@@ -81,7 +94,12 @@ export const useProjectStore = create<ProjectStore>()(
     },
 
     openProject: async (id) => {
-      const project = (await window.electronAPI.loadProject(id)) as Project
+      const api = typeof window !== 'undefined' ? window.electronAPI : undefined
+      if (!api?.loadProject) {
+        throw new Error('Electron の API が使えません。ターミナルで npm run dev から起動してください。')
+      }
+      const project = (await api.loadProject(id)) as Project
+      useEditorStore.getState().resetSession()
       set((s) => {
         s.current = project
       })
@@ -91,15 +109,19 @@ export const useProjectStore = create<ProjectStore>()(
     saveProject: async () => {
       const { current } = get()
       if (!current) return
+      const api = window.electronAPI
+      if (!api?.saveProject) return
       const updated = { ...current, updatedAt: new Date().toISOString() }
-      await window.electronAPI.saveProject(updated.id, updated)
+      await api.saveProject(updated.id, updated)
       set((s) => {
         s.current = updated
       })
     },
 
     deleteProject: async (id) => {
-      await window.electronAPI.deleteProject(id)
+      const api = window.electronAPI
+      if (!api?.deleteProject) return
+      await api.deleteProject(id)
       set((s) => {
         s.projects = s.projects.filter((p) => p.id !== id)
       })

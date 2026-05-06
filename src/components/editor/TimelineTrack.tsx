@@ -14,9 +14,9 @@ type Props = {
 }
 
 const TRACK_ACCENT: Record<string, string> = {
-  video: 'rgba(0,200,240,0.06)',
-  audio: 'rgba(52,211,153,0.06)',
-  telop: 'rgba(139,92,246,0.06)',
+  video: 'rgba(132,181,169,0.09)',
+  audio: 'rgba(126,158,140,0.09)',
+  telop: 'rgba(180,171,201,0.09)',
 }
 
 export default function TimelineTrack({

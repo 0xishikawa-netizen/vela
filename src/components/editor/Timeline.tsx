@@ -15,9 +15,9 @@ const TRACK_TYPE_ICON: Record<string, string> = {
 }
 
 const TRACK_TYPE_COLOR: Record<string, string> = {
-  video: 'rgba(0,200,240,0.7)',
-  audio: 'rgba(52,211,153,0.7)',
-  telop: 'rgba(139,92,246,0.7)',
+  video: 'rgba(132,181,169,0.72)',
+  audio: 'rgba(126,158,140,0.72)',
+  telop: 'rgba(180,171,201,0.72)',
 }
 
 export default function Timeline() {
@@ -112,11 +112,14 @@ export default function Timeline() {
         {/* Scrollable timeline area */}
         <div
           ref={scrollRef}
-          className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden"
+          className="relative min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden"
           onWheel={onWheel}
           onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
         >
-          <div style={{ width: contentWidth, minHeight: totalH }} className="relative">
+          <div
+            className="relative box-border"
+            style={{ width: contentWidth, minHeight: `max(${totalH}px, 100%)` }}
+          >
             {/* Ruler */}
             <div className="sticky left-0 top-0 z-10" style={{ width: contentWidth }}>
               <TimelineRuler

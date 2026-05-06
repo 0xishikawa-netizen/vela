@@ -35,6 +35,16 @@ export function registerDialogIpc(getWindow: () => BrowserWindow | null) {
     return filePaths
   })
 
+  ipcMain.handle('dialog:openLut', async () => {
+    const win = getWindow()
+    if (!win) return undefined
+    const { filePaths } = await dialog.showOpenDialog(win, {
+      properties: ['openFile'],
+      filters: [{ name: 'LUT (cube)', extensions: ['cube'] }],
+    })
+    return filePaths?.[0]
+  })
+
   ipcMain.handle('dialog:saveExport', async (_, defaultName: string) => {
     const win = getWindow()
     if (!win) return undefined

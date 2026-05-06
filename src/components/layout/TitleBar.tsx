@@ -6,45 +6,45 @@ export default function TitleBar() {
 
   return (
     <div
-      className="drag-region flex h-10 shrink-0 items-center justify-between px-4"
+      className="drag-region flex h-11 min-w-0 shrink-0 items-center justify-between gap-2 overflow-hidden"
       style={{
-        background: 'rgba(3,5,8,0.95)',
+        background: 'rgba(26,27,32,0.94)',
         borderBottom: '1px solid var(--border)',
+        paddingLeft: 'max(env(titlebar-area-x, 0px), 76px)',
+        paddingRight: 16,
       }}
     >
-      {/* Left: Logo + project */}
-      <div className="flex items-center gap-3">
+      {/* Left: Logo + project info */}
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-3">
         <span
-          className="text-xs font-bold tracking-widest"
-          style={{
-            background: 'linear-gradient(90deg, #00c8f0, #8b5cf6)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-          }}
+          className="shrink-0 text-[11px] font-bold tracking-[0.2em]"
+          style={{ background: 'linear-gradient(90deg, #84b5a9, #b4abc9)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
         >
           VELA
         </span>
 
         {current && (
-          <>
-            <span style={{ color: 'var(--muted-2)', fontSize: 10 }}>›</span>
-            <span className="text-xs truncate max-w-[240px]" style={{ color: 'var(--muted)' }}>
+          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+            <span className="shrink-0" style={{ color: 'var(--muted-2)', fontSize: 10 }}>
+              ›
+            </span>
+            <span className="min-w-0 truncate text-xs" style={{ color: 'var(--fg)' }} title={current.name}>
               {current.name}
             </span>
             <span
-              className="mono text-[10px] px-1.5 py-0.5 rounded"
-              style={{ background: 'var(--surface-2)', color: 'var(--muted-2)' }}
+              className="mono hidden shrink-0 text-[9px] px-1.5 py-0.5 rounded sm:inline"
+              style={{ background: 'var(--surface-2)', color: 'var(--muted)' }}
             >
-              {current.fps}fps · {current.aspectRatio}
+              {current.aspectRatio} · {current.fps}fps
             </span>
-          </>
+          </div>
         )}
       </div>
 
-      {/* Right: back button */}
+      {/* Right */}
       <button
         type="button"
-        className="no-drag btn-ghost rounded-lg px-3 py-1 text-[11px]"
+        className="no-drag btn-ghost shrink-0 rounded-lg px-2.5 py-1 text-[11px] whitespace-nowrap"
         onClick={() => closeProject()}
       >
         ← ホーム

@@ -17,8 +17,8 @@ export default function Transport() {
 
   return (
     <div
-      className="flex flex-col items-center justify-center gap-3 px-5 py-3 shrink-0"
-      style={{ minWidth: 180 }}
+      className="flex shrink-0 flex-col items-center justify-center gap-3 px-3 py-3 sm:px-5"
+      style={{ minWidth: 'min(100%, 180px)' }}
     >
       {/* Time display */}
       <div className="text-center">
@@ -57,11 +57,12 @@ export default function Transport() {
         {/* Play/Pause */}
         <button
           type="button"
+          title="Space で再生／一時停止"
           className="w-10 h-10 rounded-xl flex items-center justify-center text-base font-bold"
           style={{
             background: isPlaying ? 'var(--accent)' : 'var(--accent)',
-            color: '#020406',
-            boxShadow: isPlaying ? '0 0 16px rgba(0,200,240,0.4)' : '0 0 8px rgba(0,200,240,0.2)',
+            color: '#14181c',
+            boxShadow: isPlaying ? '0 0 14px rgba(132,181,169,0.22)' : '0 0 8px rgba(132,181,169,0.12)',
           }}
           onClick={() => setPlaying(!isPlaying)}
         >

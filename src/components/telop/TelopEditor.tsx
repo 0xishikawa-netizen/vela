@@ -38,23 +38,25 @@ export default function TelopEditor({ onAddToTimeline, resolution }: Props) {
   const ph = Math.round((pw * resolution.height) / resolution.width)
 
   return (
-    <div className="space-y-3 p-3 text-xs">
-      <textarea
-        className="w-full rounded border p-2 text-sm"
-        style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--fg)' }}
-        rows={3}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-      />
+    <div className="min-w-0 space-y-4 p-3 text-[13px]">
       <div>
-        <span style={{ color: 'var(--muted)' }}>プリセット</span>
-        <div className="mt-1 flex flex-wrap gap-1">
+        <span className="ui-label">テロップ文案</span>
+        <textarea
+          className="ui-textarea min-h-[88px]"
+          rows={3}
+          value={text}
+          placeholder="画面に表示するテキストを入力…"
+          onChange={(e) => setText(e.target.value)}
+        />
+      </div>
+      <div>
+        <span className="ui-label">プリセット</span>
+        <div className="mt-1 flex flex-wrap gap-1.5">
           {TELOP_PRESETS.map((p) => (
             <button
               key={p.id}
               type="button"
-              className="rounded px-2 py-0.5 text-[10px]"
-              style={{ background: 'var(--surface-2)' }}
+              className="ui-chip"
               onClick={() => {
                 setStyle({ ...p.style })
                 setAnimation({ ...p.animation })
@@ -66,10 +68,9 @@ export default function TelopEditor({ onAddToTimeline, resolution }: Props) {
         </div>
       </div>
       <label className="block">
-        <span style={{ color: 'var(--muted)' }}>フォント</span>
+        <span className="ui-label">フォント</span>
         <select
-          className="mt-1 w-full rounded border px-1 py-1"
-          style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--fg)' }}
+          className="ui-select mt-1 w-full min-w-0"
           value={style.fontFamily}
           onChange={(e) => setStyle({ ...style, fontFamily: e.target.value })}
         >
@@ -80,22 +81,22 @@ export default function TelopEditor({ onAddToTimeline, resolution }: Props) {
           ))}
         </select>
       </label>
-      <div className="grid grid-cols-2 gap-2">
-        <label>
-          サイズ
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block min-w-0">
+          <span className="ui-label">サイズ (px)</span>
           <input
             type="number"
-            className="mt-1 w-full rounded border px-1 py-1"
-            style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--fg)' }}
+            className="ui-input mt-1"
             value={style.fontSize}
             onChange={(e) => setStyle({ ...style, fontSize: Number(e.target.value) })}
           />
         </label>
-        <label>
-          文字色
+        <label className="block min-w-0">
+          <span className="ui-label">文字色</span>
           <input
             type="color"
-            className="mt-1 h-8 w-full"
+            className="mt-2 h-10 w-full cursor-pointer rounded-md border"
+            style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}
             value={style.color.startsWith('#') ? style.color : '#ffffff'}
             onChange={(e) => setStyle({ ...style, color: e.target.value })}
           />
@@ -103,10 +104,8 @@ export default function TelopEditor({ onAddToTimeline, resolution }: Props) {
       </div>
       <TelopAnimPicker value={animation} onChange={setAnimation} />
       <div>
-        <div className="mb-1" style={{ color: 'var(--muted)' }}>
-          位置
-        </div>
-        <div className="grid max-w-[180px] grid-cols-3 gap-1">
+        <span className="ui-label">位置</span>
+        <div className="grid w-full max-w-[180px] grid-cols-3 gap-1">
           {(
             [
               'top_left',
@@ -136,9 +135,7 @@ export default function TelopEditor({ onAddToTimeline, resolution }: Props) {
         </div>
       </div>
       <div>
-        <div className="mb-1" style={{ color: 'var(--muted)' }}>
-          プレビュー時間
-        </div>
+        <span className="ui-label">プレビュー時間</span>
         <input
           type="range"
           min={0}
@@ -151,8 +148,7 @@ export default function TelopEditor({ onAddToTimeline, resolution }: Props) {
       <TelopPreview clip={draft} width={pw} height={ph} previewTime={previewTime} />
       <button
         type="button"
-        className="w-full rounded py-2 text-xs font-medium"
-        style={{ background: 'var(--accent)', color: '#0a0c10' }}
+        className="btn-accent w-full rounded-lg px-2 py-2.5 text-center text-[13px] font-semibold leading-snug whitespace-normal"
         onClick={() =>
           onAddToTimeline({
             type: 'telop',

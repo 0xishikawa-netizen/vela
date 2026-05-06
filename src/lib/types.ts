@@ -56,6 +56,8 @@ export interface VideoClip extends BaseClip {
   speed: number
   filter: VideoFilter
   colorGrade: ColorGrade
+  /** 任意。書き出しで FFmpeg `lut3d` に渡す .cube ファイルの絶対パス */
+  lutPath?: string
   cropRect?: CropRect
 }
 
@@ -74,6 +76,9 @@ export interface ImageClip extends BaseClip {
   sourcePath: string
   kenBurns?: KenBurnsEffect
   filter: VideoFilter
+  colorGrade?: ColorGrade
+  /** 任意。FFmpeg `lut3d` */
+  lutPath?: string
 }
 
 export interface TelopClip extends BaseClip {
@@ -298,11 +303,24 @@ export const EXPORT_PRESETS: Record<ExportFormat, ExportPreset> = {
   custom: { label: 'カスタム', width: 1920, height: 1080, fps: 30, bitrate: '8000k', codec: 'h264' },
 }
 
+export type HwVideoEncoder = 'off' | 'auto' | 'videotoolbox' | 'nvenc' | 'qsv'
+
 export interface ExportSettings {
   outputPath: string
   format: ExportFormat
   preset: ExportPreset
   includeAudio: boolean
+  /** 隣接する映像クリップ間にクロスフェード（xfade）を挟む */
+  crossfadeAdjacent?: boolean
+  /** 各境界の xfade 秒。未指定時は 0.35 */
+  crossfadeDurationSec?: number
+  /** 最終ミックスに loudnorm をかける */
+  loudnessNormalize?: boolean
+  /**
+   * 動画エンコーダ。auto = macOS は VideoToolbox、Win は NVENC 狙い＋失敗時ソフト
+   * off または未対応時は libx264/libx265
+   */
+  videoEncoder?: HwVideoEncoder
 }
 
 // ============================================================
