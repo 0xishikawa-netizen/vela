@@ -1,0 +1,71 @@
+---
+description: Vela 開発規約（繰り返し指示の集約・エージェント向け）
+alwaysApply: true
+---
+
+# Vela 開発規約
+
+ユーザーが何度も伝えている前提を **ここに一本化**する。新規作業では本ルールと `vela-product-roadmap.mdc` を優先すること。
+
+## コミュニケーション
+
+- **ユーザー向けの返答は日本語**（コード・識別子・コミットメッセージの言語はタスクに合わせてよいが、説明は日本語）。
+- **既存コードを示すときは** Cursor のコード参照形式を使う（開始行:終了行:パス。フェンスは単独行）。
+- 依頼の背景や会話の流れを読み、**直前の一文だけでなく意図まで**合わせる。
+
+## 実装ポリシー（最重要）
+
+- **依頼範囲だけ変更する**。依頼と無関係なリファクタ、別ファイルの「ついで」整理、ドキュメントの勝手な追加は **しない**。
+- **既存コードに合わせる**: 命名、import の並び、コンポーネント分割、コメント量は周辺と同じトーンに揃える。
+- **1 行 1 理由**: diff の各行が依頼に直結していること。
+- **ユーザーが明示した markdown 以外**は、特に依頼がなければ **新規 README / 長文ドキュメントを増やさない**（製品ロードマップ・本規約など **`.cursor/rules` への追加は依頼ベースで可**）。
+
+## 調査・検証
+
+- **手元でコマンドを実行して確認する**（「ユーザーに実行して」と丸投げしない）。
+- 変更後は可能なら **`npm run build`** で型・バンドルエラーを確認する。UI 変更なら **`npm run dev`** で起動確認を推奨。
+- 失敗したら **別手段・ログ読み取りで粘る**（一度失敗で止めない）。
+
+## Vela スタックと置き場所
+
+| 領域 | パス・技術 |
+|------|------------|
+| レンダラ | `src/`（React 19 + TypeScript + Vite + Tailwind v4） |
+| 状態 | `src/store/`（Zustand、`projectStore` は **immer**） |
+| Electron メイン | `electron/`（`main.ts`, `ipc/*.ts`, `ffmpeg.ts`） |
+| プリロード | `electron/preload.ts` → `window.electronAPI` |
+| 型（共有） | `src/lib/types.ts` |
+| スタイル共通 | `src/index.css`（`:root` の CSS 変数、**`.ui-label` / `.ui-input` 等**） |
+
+新しいメイン処理は **IPC ハンドラを登録 → preload で `exposeInMainWorld` → `src/electron.ts` の型** の順で揃える。
+
+## Electron・ブラウザの落とし穴（繰り返し注意）
+
+- **アプリ起動**: プロジェクトルートで **`npm run dev`**。`Electron.app` 単体起動は既定画面のまま **Vela は動かない**。
+- **レンダラでは `window.electronAPI` が undefined のことがある**（ブラウザのみ開いた場合等）。**必須 IPC 前に存在チェック**し、失敗時は **ユーザーに見えるエラー**（トースト・インライン文言・`console.error`）を残す。`void promise` で握り潰さない。
+- メインのウィンドウ色は **`electron/main.ts` の `backgroundColor`** を `index.css` の `--bg` と揃える。
+
+## UI / スタイル
+
+- 色・コントラストは **`index.css` の `:root` 変数**を増やして共有する。ハードコード色の散乱を避ける。
+- フォームは可能な限り **`.ui-label` / `.ui-input` / `.ui-textarea` / `.ui-select` / `.ui-chip`** を使い、プレースホルダーは **`::placeholder`** と `--placeholder` に寄せる。
+- **Mac / Windows 両方**を意識（フォントスタックに `Segoe UI`、スクロールバー、パスは `path` / `file://` の扱いに注意）。
+
+## 状態・プロジェクト
+
+- プロジェクトの永続化は **`electron/ipc/project.ts`** 経由。新規作成・別プロジェクトオープン時は **`useEditorStore.getState().resetSession()`** 等、**セッション状態のリセット**を忘れない（既存パターンに従う）。
+- 履歴は **`useHistoryStore`**。編集操作と undo の整合を崩さない。
+
+## Git
+
+- **`node_modules` / `out` / `release` はコミットしない**（`.gitignore` 遵守）。
+- GitHub へ push が止まるときは **認証**（HTTPS のトークン、または **SSH** `git@github.com:...`）を確認。
+
+## セキュリティ・法務の最低限
+
+- **秘密鍵・トークン・個人情報をリポジトリに含めない**。
+- 素材（BGM・LUT・フォント）は **再配布可能なものだけ**同梱またはユーザー指定。
+
+## ロードマップとの関係
+
+- **機能の優先度・スコープ**は `vela-product-roadmap.mdc` に従う。本ファイルは **「どう作るか・何を繰り返さないか」** を定義する。

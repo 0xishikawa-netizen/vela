@@ -1,3 +1,5 @@
+import type { ExportPreset, ExportPresetId } from './exportPresets'
+
 // ============================================================
 // プロジェクト
 // ============================================================
@@ -15,6 +17,13 @@ export interface Project {
   resolution: { width: number; height: number }
   tracks: Track[]
   thumbnailPath?: string
+  /** 全体の最終音量（プレビュー・書き出し）。省略時 1.0。0〜2（等倍〜200%） */
+  audioMasterVolume?: number
+  /**
+   * ファイル字幕トラック（SRT/VTT import）。テロップクリップとは別。省略時は `[]` 扱い。
+   * Whisper 連携は後続フェーズ。
+   */
+  subtitleTracks?: SubtitleTrack[]
 }
 
 // ============================================================
@@ -29,6 +38,12 @@ export interface Track {
   name: string
   muted: boolean
   locked: boolean
+  /** 音声トラックの書き出しゲイン倍率（既定 1）。映像・テロップでは未使用 */
+  volume?: number
+  /** 音声トラックのみ。いずれかが true のとき、ソロ以外の音声はミックスに入れない */
+  solo?: boolean
+  /** 音声トラックのステレオバランス（-1=左寄り, 0=中央, 1=右寄り）。書き出しで stereotools に反映 */
+  pan?: number
   clips: Clip[]
 }
 
@@ -67,6 +82,10 @@ export interface AudioClip extends BaseClip {
   sourceStart: number
   sourceEnd: number
   volume: number
+  /** クリップ単体ミュート（書き出しはゲイン 0。トラック M とは別） */
+  muted?: boolean
+  /** クリップ単体のパン（-1=左, 0=中央, 1=右）。トラック pan と加算後に -1〜1 にクランプ */
+  pan?: number
   fadeIn: number
   fadeOut: number
 }
@@ -226,6 +245,16 @@ export type TelopAnimationType =
   | 'blur_in'
   | 'wave'
 
+/** 書き出し（ASS）での再現度。UI の注意表示に使う */
+export type ExportSupportLevel = 'full' | 'approx' | 'unsupported'
+
+export type TelopAnimationMeta = {
+  key: TelopAnimationType
+  label: string
+  exportSupport: ExportSupportLevel
+  exportNote?: string
+}
+
 export interface TelopAnimation {
   in: TelopAnimationType
   inDuration: number
@@ -277,36 +306,22 @@ export interface MediaFile {
 // 書き出し設定
 // ============================================================
 
-export type ExportFormat =
-  | 'youtube_hd'
-  | 'youtube_4k'
-  | 'instagram_reel'
-  | 'twitter'
-  | 'tiktok'
-  | 'custom'
+export type { ExportPreset, ExportPresetId } from './exportPresets'
+export {
+  EXPORT_PRESET_DEFINITIONS,
+  EXPORT_PRESETS,
+  resolveExportPresetSettings,
+  sanitizeExportPresetId,
+} from './exportPresets'
 
-export interface ExportPreset {
-  label: string
-  width: number
-  height: number
-  fps: number
-  bitrate: string
-  codec: 'h264' | 'h265'
-}
+/** 選択中のプリセット ID（`ExportPresetId` と同義・互換名） */
+export type ExportFormat = ExportPresetId
 
-export const EXPORT_PRESETS: Record<ExportFormat, ExportPreset> = {
-  youtube_hd: { label: 'YouTube HD（1080p）', width: 1920, height: 1080, fps: 30, bitrate: '8000k', codec: 'h264' },
-  youtube_4k: { label: 'YouTube 4K', width: 3840, height: 2160, fps: 30, bitrate: '35000k', codec: 'h265' },
-  instagram_reel: { label: 'Instagram Reel（縦型）', width: 1080, height: 1920, fps: 30, bitrate: '5000k', codec: 'h264' },
-  twitter: { label: 'X（Twitter）', width: 1280, height: 720, fps: 30, bitrate: '5000k', codec: 'h264' },
-  tiktok: { label: 'TikTok', width: 1080, height: 1920, fps: 30, bitrate: '6000k', codec: 'h264' },
-  custom: { label: 'カスタム', width: 1920, height: 1080, fps: 30, bitrate: '8000k', codec: 'h264' },
-}
-
-export type HwVideoEncoder = 'off' | 'auto' | 'videotoolbox' | 'nvenc' | 'qsv'
+export type HwVideoEncoder = 'off' | 'auto' | 'videotoolbox' | 'nvenc' | 'qsv' | 'amf'
 
 export interface ExportSettings {
   outputPath: string
+  /** 書き出しプリセット ID（`sanitizeExportPresetId` で正規化済み想定） */
   format: ExportFormat
   preset: ExportPreset
   includeAudio: boolean
@@ -314,11 +329,14 @@ export interface ExportSettings {
   crossfadeAdjacent?: boolean
   /** 各境界の xfade 秒。未指定時は 0.35 */
   crossfadeDurationSec?: number
-  /** 最終ミックスに loudnorm をかける */
+  /** 最終ミックスに loudnorm をかける（後方互換。`audioPostMix` が優先） */
   loudnessNormalize?: boolean
+  /** ミックス後のオーディオ処理。未指定時は `loudnessNormalize` が true なら loudnorm */
+  audioPostMix?: 'none' | 'loudnorm' | 'dynaudnorm'
   /**
-   * 動画エンコーダ。auto = macOS は VideoToolbox、Win は NVENC 狙い＋失敗時ソフト
-   * off または未対応時は libx264/libx265
+   * 動画エンコーダ。
+   * - `auto`: macOS → VideoToolbox、Windows → NVENC、Linux → libx264/libx265（VAAPI 等は未実装）
+   * - HW 失敗時は **1 回だけ** libx264/libx265 に自動再試行（`off` 指定時は再試行しない）
    */
   videoEncoder?: HwVideoEncoder
 }
@@ -333,6 +351,53 @@ export interface Caption {
   endTime: number
   text: string
   isAiGenerated: boolean
+}
+
+/** ファイル字幕の 1 キュー（Whisper 前のプロジェクト内字幕） */
+export interface SubtitleSegment {
+  id: string
+  startSec: number
+  endSec: number
+  text: string
+  speaker?: string
+  /** 0〜1。省略可 */
+  confidence?: number
+}
+
+export interface SubtitleTrack {
+  id: string
+  name: string
+  language?: string
+  segments: SubtitleSegment[]
+}
+
+/** Whisper 実装前の文字起こしジョブ（Phase E-3 mock / 将来の推論用） */
+export type TranscriptionJobStatus = 'idle' | 'queued' | 'running' | 'completed' | 'failed' | 'canceled'
+
+/** `src/lib/transcriptionEngine.ts` の実装 ID と一致（循環回避のため型はここに置く） */
+export type TranscriptionEngineId = 'mock' | 'whisper-local'
+
+export interface TranscriptionOptions {
+  language?: string
+  translateToJapanese?: boolean
+  /** 将来 Whisper のモデル規模。現状は mock のみで参照のみ */
+  modelSize?: string
+}
+
+export interface TranscriptionJob {
+  id: string
+  sourceMediaPath: string
+  status: TranscriptionJobStatus
+  /** 0〜1 */
+  progress: number
+  language?: string
+  options?: TranscriptionOptions
+  createdAt: string
+  updatedAt: string
+  errorMessage?: string
+  /** mock / Whisper 完了時にセット */
+  resultSegments?: SubtitleSegment[]
+  engine?: TranscriptionEngineId
 }
 
 // ============================================================

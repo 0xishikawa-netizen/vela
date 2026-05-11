@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { ImageClip } from '../../lib/types'
+import { coerceTimelineSeconds } from '../../lib/projectSanitize'
 import { useProjectStore, buildVideoClipFromMedia, buildAudioClip } from '../../store/projectStore'
 import { useEditorStore } from '../../store/editorStore'
 
@@ -40,7 +41,7 @@ export default function MediaPanel() {
   const addToTimeline = async (path: string, type: string) => {
     if (!current) return
     const info = await window.electronAPI.getMediaInfo(path)
-    const dur = info.duration ?? 5
+    const dur = coerceTimelineSeconds(info.duration) || 5
     const videoTrack = current.tracks.find((t) => t.type === 'video')
     const audioTrack = current.tracks.find((t) => t.type === 'audio')
     if (type === 'audio') {

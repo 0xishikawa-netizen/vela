@@ -80,6 +80,9 @@ export default function TelopEditor({ onAddToTimeline, resolution }: Props) {
             </option>
           ))}
         </select>
+        <p className="mt-1.5 text-[10px] leading-snug" style={{ color: 'var(--muted-2)' }}>
+          書き出し（ASS）は OS のフォント解決（libass）です。未インストールの書体は代替になり、プレビューと幅がずれることがあります。
+        </p>
       </label>
       <div className="grid grid-cols-2 gap-3">
         <label className="block min-w-0">

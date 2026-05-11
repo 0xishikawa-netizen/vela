@@ -1,6 +1,6 @@
 import { useProjectStore } from '../../store/projectStore'
 import { useEditorStore } from '../../store/editorStore'
-import type { VideoClip, AudioClip, ImageClip } from '../../lib/types'
+import type { VideoClip, ImageClip } from '../../lib/types'
 
 function PanelRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -103,6 +103,9 @@ export default function PropertiesPanel() {
           display={`${vc.speed.toFixed(2)}x`}
           onChange={(v) => updateClip(selectedTrackId, selectedClipId, { speed: v })}
         />
+        <p className="text-[10px] leading-relaxed" style={{ color: 'var(--muted-2)' }}>
+          色味・LUT・プリセット・トランジションは右パネル「ルック」タブで調整します（書き出しに反映されます）。
+        </p>
       </div>
     )
   }
@@ -134,7 +137,6 @@ export default function PropertiesPanel() {
   }
 
   if (clip.type === 'audio') {
-    const ac = clip as AudioClip
     return (
       <div className="flex min-w-0 flex-col gap-4 p-4">
         <div
@@ -143,35 +145,11 @@ export default function PropertiesPanel() {
         >
           ♪ 音声クリップ
         </div>
-        <SliderRow
-          label="音量"
-          min={0}
-          max={1}
-          step={0.05}
-          value={ac.volume}
-          display={`${Math.round(ac.volume * 100)}%`}
-          onChange={(v) => updateClip(selectedTrackId, selectedClipId, { volume: v })}
-        />
-        <SliderRow
-          label="フェード IN（秒）"
-          min={0}
-          max={10}
-          step={0.1}
-          value={ac.fadeIn}
-          display={ac.fadeIn.toFixed(1)}
-          onChange={(v) => updateClip(selectedTrackId, selectedClipId, { fadeIn: v })}
-        />
-        <SliderRow
-          label="フェード OUT（秒）"
-          min={0}
-          max={10}
-          step={0.1}
-          value={ac.fadeOut}
-          display={ac.fadeOut.toFixed(1)}
-          onChange={(v) => updateClip(selectedTrackId, selectedClipId, { fadeOut: v })}
-        />
+        <p className="text-[11px] leading-relaxed font-medium" style={{ color: 'var(--label)' }}>
+          音量・ミュート・パン・フェード IN/OUT は右パネル「音声」の「選択中の音声クリップ」から編集します。
+        </p>
         <p className="text-[10px] leading-relaxed" style={{ color: 'var(--muted-2)' }}>
-          トラック全体のミュートは右パネル「音声」から切り替えます。
+          プレビューでは音量・クリップミュート・パン（トラックと合成）・フェードが反映されます。フェードは FFmpeg（書き出し）と Web Audio（プレビュー）で処理が異なり、体感はわずかに違う場合があります。
         </p>
       </div>
     )

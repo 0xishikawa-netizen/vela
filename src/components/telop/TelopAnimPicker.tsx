@@ -1,12 +1,13 @@
 import type { TelopAnimation, TelopAnimationType } from '../../lib/types'
+import { getTelopInAnimationMeta } from '../../lib/telopAnimationMeta'
 
-const IN_OPTS: { id: TelopAnimationType; label: string }[] = [
-  { id: 'none', label: 'なし' },
-  { id: 'fade_in', label: 'フェードイン' },
-  { id: 'slide_up', label: '下から上' },
-  { id: 'zoom_in', label: 'ズームイン' },
-  { id: 'bounce', label: 'バウンス' },
-  { id: 'blur_in', label: 'ブラーイン' },
+const IN_ORDER: TelopAnimationType[] = [
+  'none',
+  'fade_in',
+  'slide_up',
+  'zoom_in',
+  'bounce',
+  'blur_in',
 ]
 
 type Props = {
@@ -15,6 +16,9 @@ type Props = {
 }
 
 export default function TelopAnimPicker({ value, onChange }: Props) {
+  const inMeta = getTelopInAnimationMeta(value.in)
+  const showInNote = inMeta.exportSupport !== 'full' && inMeta.exportNote
+
   return (
     <div className="grid grid-cols-2 gap-3 text-[13px]">
       <label className="col-span-2 block min-w-0">
@@ -24,12 +28,20 @@ export default function TelopAnimPicker({ value, onChange }: Props) {
           value={value.in}
           onChange={(e) => onChange({ ...value, in: e.target.value as TelopAnimationType })}
         >
-          {IN_OPTS.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.label}
-            </option>
-          ))}
+          {IN_ORDER.map((id) => {
+            const m = getTelopInAnimationMeta(id)
+            return (
+              <option key={id} value={id}>
+                {m.label}
+              </option>
+            )
+          })}
         </select>
+        {showInNote && (
+          <p className="mt-1.5 text-[10px] leading-snug" style={{ color: 'var(--muted-2)' }}>
+            {inMeta.exportNote}
+          </p>
+        )}
       </label>
       <label className="block min-w-0">
         <span className="ui-label">イン秒</span>
@@ -53,6 +65,9 @@ export default function TelopAnimPicker({ value, onChange }: Props) {
           onChange={(e) => onChange({ ...value, outDuration: Number(e.target.value) })}
         />
       </label>
+      <p className="col-span-2 text-[10px] leading-snug" style={{ color: 'var(--muted-2)' }}>
+        書き出しは ASS（libass）です。プレビューと完全一致しないアニメは上記のとおり近似または未再現になります。
+      </p>
     </div>
   )
 }

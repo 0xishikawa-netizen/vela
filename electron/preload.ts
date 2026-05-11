@@ -1,8 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  getRuntimePlatform: () =>
+    ipcRenderer.invoke('app:getRuntimePlatform') as Promise<'darwin' | 'win32' | 'linux'>,
+
   openMediaDialog: () => ipcRenderer.invoke('dialog:openMedia'),
   openLutDialog: () => ipcRenderer.invoke('dialog:openLut'),
+  readSubtitleFile: () => ipcRenderer.invoke('dialog:readSubtitleFile'),
+  saveSubtitleFile: (payload: { defaultName: string; content: string }) =>
+    ipcRenderer.invoke('dialog:saveSubtitleFile', payload),
   saveExportDialog: (name: string) => ipcRenderer.invoke('dialog:saveExport', name),
   showItemInFolder: (filePath: string) => ipcRenderer.invoke('shell:showItem', filePath),
 
@@ -14,8 +20,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMediaInfo: (filePath: string) => ipcRenderer.invoke('media:getInfo', filePath),
   getThumbnail: (filePath: string, t?: number) => ipcRenderer.invoke('media:getThumbnail', filePath, t),
   getWaveform: (filePath: string) => ipcRenderer.invoke('media:getWaveform', filePath),
+  readAudioFileForWaveform: (filePath: string) =>
+    ipcRenderer.invoke(
+      'media:readAudioFileForWaveform',
+      filePath,
+    ) as Promise<
+      | { ok: true; data: Buffer; mtimeMs: number; fileSize: number }
+      | { ok: false; reason: 'too_large' | 'error'; mtimeMs?: number; fileSize?: number }
+    >,
+
+  readCubeLutFile: (lutPath: string) =>
+    ipcRenderer.invoke('media:readCubeLutFile', lutPath) as Promise<
+      | { ok: true; text: string; mtimeMs: number; sizeBytes: number }
+      | { ok: false; reason: 'not_found' | 'not_cube_extension' | 'too_large' | 'read_error' }
+    >,
 
   startExport: (project: object, settings: object) => ipcRenderer.invoke('export:start', project, settings),
+  getLastExportDiagnostics: () => ipcRenderer.invoke('export:getLastDiagnostics'),
+  saveExportDiagnosticsLog: (opts?: { userFacingError?: string }) =>
+    ipcRenderer.invoke('export:saveLastDiagnostics', opts ?? {}) as Promise<
+      | { ok: true; path: string }
+      | { ok: false; reason: string; detail?: string }
+    >,
   onExportProgress: (cb: (pct: number) => void) => {
     ipcRenderer.on('export:progress', (_, pct: number) => cb(pct))
   },

@@ -36,7 +36,7 @@ export default function TimelineRuler({ duration, zoom, scrollLeft, width }: Pro
         <div
           key={t}
           className="absolute top-0 flex flex-col items-center"
-          style={{ left: t * zoom - scrollLeft, width: 0 }}
+          style={{ left: t * zoom, width: 0 }}
         >
           <span
             className="mono -translate-x-1/2 whitespace-nowrap pt-1.5 text-[9px] font-medium tracking-wider"

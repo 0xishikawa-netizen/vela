@@ -1,0 +1,690 @@
+---
+description: Vela 製品ロードマップ（無料・ローカル完結で「最上級」機能を揃える計画）
+alwaysApply: true
+---
+
+# Vela 製品ロードマップ（コンテキスト）
+
+このドキュメントは Vela（local-first 動画編集） を、クラウド課金なし・可能な限りオープンソース／フリー素材で 機能面「最上級」 に近づけるための実装計画の単一ソースである。
+
+作業時はこの方針を優先し、Phase A〜E の方向性から大きく外れないこと。
+
+---
+
+## 製品原則
+
+- ローカルファースト  
+  原則オンデバイス処理。外部 API に依存しない機能を優先する。
+
+- 無料で積める範囲を最大化  
+  MIT 相当の自前コード、FFmpeg、Whisper 系、ユーザー提供または著作権フリーの LUT / フォントを前提にする。  
+  配布時は FFmpeg / バイナリのライセンス条件を整理する。
+
+- プレビューと書き出しの一貫性  
+  ユーザーが見たものに近い結果を書き出しで出すことを最優先課題のひとつにする。
+
+---
+
+# 現状のギャップ
+
+## ルック / Effects
+
+- EffectsPanel から filter / colorGrade / LUT / transition は編集可能。
+- 書き出し（canonical）は `buildClipVideoFilterParts`（FFmpeg）で反映済み。
+- **Phase C 要約**（詳細は下記「Phase C — カラー・ルック」）:
+  - **C-1 Done**: `presetFilter` / brightness / contrast / saturation の **preview CSS 近似**（`previewLook.ts`）。
+  - **C-2 Main Done**: LUT パーサー、`readCubeLutFile` IPC、WebGL プレビュー、fallback、DPR / resize / rAF 仕上げ、目視スモーク（`check:lut-cube`・`fixtures/export/phase-c/README.md`）。
+  - **C-3 Main Done**: hue / 色温度 UI、`sanitizeColorGrade`、preview CSS 近似、export FFmpeg（**`eq` → `hue` → `colorbalance`**）、`check:preview-look` で **順序**検証。
+- export の **FFmpeg `lut3d` が canonical**。preview / export の厳密一致・pixel 一致は Remaining。
+
+## オーディオ
+
+- 複数音声は amix で書き出し済み。
+- Phase A のタイムライン尺合わせは維持済み。
+- Phase B で以下は実装済み。
+  - clip volume
+  - clip mute
+  - clip pan
+  - clip fade in / out
+  - master volume
+  - preview 反映
+  - export 反映
+  - fixture verify
+  - 音声レベル検査
+- **タイムライン波形**: AudioClip 用の第一段階（クリップ下部 SVG）は完了。細部（長尺波形・ステレオ二重表示など）は別項。
+- **Phase B ステレオ素材 fixture**: 元からステレオの WAV で export・尺・L/R 検査を固定済み（`phase-b-stereo-*`）。
+- 残りは、ラウドネス、ducking、より多様なステレオ条件、波形の上位機能など。
+
+## トランジション
+
+- 非重なりの隣接クリップ経路では xfade / concat が利用可能。
+- 映像クリップがタイムライン上で重なる場合は overlay 経路となり、xfade とは排他。
+- overlay 時は ExportModal で警告表示済み。
+
+## テロップ
+
+- 書き出しは一時 ASS + FFmpeg ass フィルタ。
+- electron/ffmpeg.ts の buildAssBurnInFilter に集約済み。
+- subtitles の file= 記法を ass に流用しないこと。
+  - NG: ass=file='...'
+  - OK: ass='...'
+  - 誤ると static ffmpeg で SIGSEGV しうる。
+- プレビューと ASS は共通アンカー・フェードエンベロープで寄せ済み。
+- ただし、リッチアニメ、複行の縦位置、フォント環境差は残課題。
+
+## 書き出し
+
+- H.264 / H.265、プリセット、連結、xfade、overlay、filter、eq、LUT、音声ミックス、タイムライン尺合わせは対応済み。
+- ハードウェアエンコードは書き出し設定から選択可能。
+- buildExportJob 的な純粋層への分離は未実施。
+
+---
+
+# フェーズ計画
+
+---
+
+## Phase A — 書き出し品質・一貫性
+
+Phase A は、動画・音声・テロップの書き出しが安定し、preview と export の差分を明示できている状態を目指す。
+
+### Done
+
+#### テロップ書き出し
+
+- 一時 .ass を生成し、FFmpeg ass フィルタで焼き込み。
+- buildAssBurnInFilter に ASS 焼き込み断片を集約。
+- format=yuv420p を ASS 前後に配置。
+- shaping=0 を使用。
+- ass=file='...' の誤用による SIGSEGV を解消。
+- ass と subtitles のフィルタ文字列を混同しない旨を README / コメントに固定化。
+- buildEnvelopeFadeTag により、inDuration / outDuration に応じて常に \fad を付与。
+- slide 移動量を preview 側と同じ 60 / 40 px に統一。
+- getTelopAssAnchor により、preview と ASS の水平参照・align を共通化。
+- ASS 未対応アニメやフォント差は UI / コメントで明示。
+
+#### 書き出し回帰
+
+- fixtures/export/phase-a/ に Phase A export fixtures を整備。
+- npm run fixture:phase-a:verify で 8/8 PASS。
+- FFMPEG_BIN による ffmpeg 差し替えに対応。
+- VELA_PHASE_A_DEBUG / VELA_EXPORT_DEBUG で以下を出力可能。
+  - filter_complex
+  - argv JSON
+  - ASS 先頭
+  - 一時 ASS 保持
+  - ffmpeg path / version
+
+#### 映像合成
+
+- 非重なりの隣接クリップは xfade / concat 経路。
+- 重なりクリップは tpad + overlay 経路。
+- overlay 経路では xfade と排他。
+- overlay 時の xfade 無効は ExportModal で警告済み。
+
+#### 音声尺
+
+- amix=duration=longest
+- atrim
+- apad=whole_dur
+- -t timelineDuration
+
+により、音声が短い場合でも映像が途中で切れにくい構成に変更済み。
+
+#### ルック書き出し
+
+- buildClipVideoFilterParts 経由で以下を書き出しに反映。
+  - presetFilter
+  - colorGrade
+  - LUT
+  - clip fade
+- EffectsPanel / ExportModal に、書き出しが canonical・プレビューは近似（LUT は WebGL **trilinear**、export **`lut3d` tetrahedral** とは非一致）の注意を記載。
+
+#### CI
+
+- .github/workflows/phase-a-export-fixtures.yml
+- workflow 表示名: Export fixture regression
+- PR / main push 時に以下を連続実行。
+  - npm run fixture:phase-a:verify
+  - npm run fixture:phase-b:verify
+- Linux CI ゲート済み。
+- 失敗時 artifact でログ・生成物を取得可能。
+
+### Partial
+
+- zoom 系は ASS の \t + \fscx / \fscy で近似。
+- blur_in はブラー本体なし。フェード中心の近似。
+- xfade は非重なりの通常経路のみ。
+- overlay 経路では xfade 無効。
+- ルックは export 反映済み。preview は **CSS 近似**（preset + colorGrade の 3 スライダー）まで。**LUT** と **厳密な curves 一致**は未。
+
+### Remaining
+
+1. preview への **LUT（.cube）** の **WebGL 統合**および **export との高精細一致**  
+   **C-2c〜2f** で `Preview.tsx`・**trilinear**・**状態整理**・**目視導線**・**DPR/backing・rAF 分離**まで **主要 Done**。pixel 自動比較・tetrahedral / fallback UI・実機性能は Remaining。
+
+2. 複行テロップの縦アンカー改善  
+   Canvas の行スタックと ASS の単一 \pos の差を縮める。
+
+3. fontsdir / フォント同梱  
+   libass の環境差を減らす。
+
+4. macOS / Windows CI スモーク  
+   パス・クォート・バイナリ差を確認する。
+
+5. overlay + xfade の設計  
+   現状は排他。両立は大項目。
+
+6. リッチアニメの追加近似  
+   bounce / flip / glitch / typewriter / wave など。
+
+7. buildExportJob の薄い分離  
+   filter_complex 組み立てを純粋関数化し、CLI / main / test で共有しやすくする。
+
+### Phase A 参照実装
+
+| 領域                   | パス                                       |
+| ---------------------- | ------------------------------------------ |
+| 書き出しコア           | electron/ffmpeg.ts                         |
+| ASS 焼き込み           | buildAssBurnInFilter in electron/ffmpeg.ts |
+| ASS 生成               | src/lib/telopAss.ts                        |
+| テロップ幾何・アンカー | src/lib/telopExportGeometry.ts             |
+| プレビュー描画         | src/lib/telopRenderer.ts                   |
+| アニメメタ             | src/lib/telopAnimationMeta.ts              |
+| アニメ UI              | src/components/telop/TelopAnimPicker.tsx   |
+| テロップ編集 UI        | src/components/telop/TelopEditor.tsx       |
+| 書き出し UI            | src/components/editor/ExportModal.tsx      |
+| ルック UI              | src/components/editor/EffectsPanel.tsx     |
+| Phase A fixtures       | fixtures/export/phase-a/                   |
+
+---
+
+## Phase B — オーディオ「最上級」
+
+Phase B は、音声編集・ミックス・プレビュー・書き出しの実用性を高める。
+
+### Done
+
+#### クリップ単位の音声制御
+
+- clip volume
+- clip mute
+- clip fade in / out
+- clip pan
+- master volume
+
+#### preview 反映
+
+- volume
+- mute
+- clip + track pan
+- master volume
+- fade in / out
+
+fade in / out は **preview** で Web Audio 線形ゲイン（`calculateAudioFadeGain`）、**export** で **`afade`**（`curve=` 未指定の既定）。**フェード長**は **`resolveNormalizedAudioFadeLengths`** で共有。  
+カーブの厳密一致は狙わない。**`phase-b-fade-in-out`** では export 音声の **区間 `mean_volume`** で両端が中央より低いことを **緩く自動検査**（`check-phase-b-export.mjs`）。
+
+#### タイムライン波形（第一段階・固定済み）
+
+- **対象**: 現在は **AudioClip のみ**（タイムライン下部の単色波形）。**動画クリップに内蔵された音声からの抽出は未対応**。
+- **小〜中容量ファイル**: メインプロセスでバイト読み込み後、レンダラー側 **`decodeAudioData`** で波形 peaks を算出。
+- **大容量ファイル**: **`readAudioFileForWaveform`** がサイズ判定し、**約 24MB を超える**と **FFmpeg `getWaveform` にフォールバック**。フォールバック時は **`WAVEFORM_FFMPEG_CAPTURE_SEC`（先頭〜約 30 秒相当）**の peaks に限る。
+- **キャッシュ**: **インメモリのみ**（`src/lib/waveform.ts`）。**永続キャッシュ・Worker・L/R stereo peaks は未対応**。
+- **セッション境界**: **`useEditorStore.resetSession`** で波形キャッシュを **`clearWaveformPeakCache`**。
+- **回帰確認**: **`npm run check:waveform`**（アルゴ・キャッシュ・`loadWaveformPeaksForPath` のモック経路）。
+- **デバッグ**: **`VELA_WAVEFORM_DEBUG=1`** で経路・cache hit／miss・ファイルサイズ等を **`[vela-waveform]`** で出力（開発ビルドで `electron.vite.config` に埋め込み）。
+
+#### export 反映
+
+- clip volume
+- mute
+- afade
+- clip pan
+- track pan
+- master volume
+- Phase A の timeline duration 処理維持
+
+#### fade ロジック共有
+
+以下を src/lib/audioMix.ts に整理。
+
+- audioClipTrimDurationSec
+- normalizeAudioFadeDuration
+- resolveNormalizedAudioFadeLengths
+- calculateAudioFadeGain
+
+electron/ffmpeg.ts と preview 側でフェード長の正規化を共有。
+
+#### pan
+
+- AudioClip.pan
+- effectivePanForAudioClip = clamp(trackPan + clipPan, -1, 1)
+- preview: StereoPanner
+- export: aformat=channel_layouts=stereo,stereotools=balance_out=...
+- FFmpeg 6 では stereotools=balance= ではなく balance_out= を使う。
+- pan≈0 の場合は pan filter を省略。
+
+#### master volume
+
+- Project.audioMasterVolume
+- 未定義は 1.0
+- 0〜2 に clamp
+- preview は stem × master
+- export は amix の後、atrim の前に volume=<master>
+
+#### fixtures / verify
+
+- fixtures/export/phase-b/
+- npm run fixture:phase-b:verify
+- 12/12 PASS（mono 系 pan + **ステレオ素材** reference / pan left / pan right を含む）。
+- duration check。
+- volumedetect による音量検査。
+  - mute
+  - clip volume
+  - master volume
+  - pan L/R 差分（mono 由来と **元ステレオ** の両方）
+- pan は PAN_EXPECTATIONS で以下を検査。
+  - clip pan right / left（mono 音源）
+  - track pan right
+  - track + clip pan clamp
+  - **stereo-lr-10s** 上の clip pan right / left
+- **ステレオ基準** `phase-b-stereo-reference`: 左右 ch それぞれ `max_volume` が **-60dB より大きい**（有限）ことで、極端な片側落ち・無音を検出（`STEREO_REFERENCE_EXPECTATIONS`）。
+- **ステレオ pan**: `phase-b-stereo-pan-right` / `phase-b-stereo-pan-left` を **`PAN_EXPECTATIONS`** に含め、元ステレオ入力でも **R-L / L-R >= 6dB** を確認。
+- メディアは **`npm run fixture:phase-a:media`** で **`stereo-lr-10s.wav`**（L 440Hz / R 880Hz・10s）を生成。
+- **フェード export 回帰**: **`phase-b-fade-in-out`** で **冒頭・中央・終端**の `volumedetect` 区間比較（**`FADE_SEGMENT_DROP_MIN_DB`** 程度の差で PASS。曲線フィッティングではない）。
+
+#### CI
+
+- Phase A と同じ GitHub Actions workflow で Phase B verify も実行。
+
+### Partial
+
+- preview の fade（線形ゲイン積）と export の **`afade`**（既定 `curve`）は **同一カーブではない**（体感近似・長さ共有が主目的）。
+- **`phase-b-fade-in-out`** の自動検査は **export の区間 mean の粗い比較**に留まる（preview 一致やサンプル精度の検証ではない）。
+- track volume / mute / solo / pan は既存実装あり。
+- track pan 専用 fixture はあり。
+- ステレオ素材は **L/R 別周波数の短尺 WAV** で reference / pan を固定（より多様なステレオ条件は今後）。
+- pan law は Web Audio StereoPanner と FFmpeg stereotoolsで完全一致未保証（回帰は左右差・各 ch レベルの緩い閾値）。
+- タイムライン波形は第一段階完了（上記 Done）。細部のみ Remaining で追う。
+
+### Remaining
+
+1. 波形の拡張  
+   **動画クリップ内蔵音声**への対応、**永続キャッシュ**・**Worker 化**、**ステレオ L/R の二重線**、`beat detection`／`silence detection` は未対応。
+
+2. loudnorm / dynaudnorm  
+   ラウドネス正規化・音量の均一化。
+
+3. sidechaincompress / ducking  
+   ナレーション中に BGM を自動で下げる。
+
+4. preview と export の **フェードカーブ完全一致**、`afade` の **`curve=` 明示**とプレビュー側の追随、**より厳密な**波形検査（`astats` 等）。
+
+5. ステレオ条件の拡張  
+   位相・レベル差・長尺ステレオなど、追加 fixture で pan / mix を広げる。
+
+6. pan law の許容差定義  
+   Web Audio と FFmpeg の差をどこまで許容するか定義する。
+
+### Phase B で次にやるべきこと
+
+1. loudnorm / dynaudnorm
+2. sidechaincompress / ducking
+3. 波形の拡張（動画内蔵音声・永続キャッシュ・Worker）
+4. ステレオ条件の拡張 fixture
+5. preview / export のフェード **カーブ**を寄せる（完全一致は Partial の長期課題）
+
+### Phase B 参照実装
+
+| 領域                 | パス                                 |
+| -------------------- | ------------------------------------ |
+| オーディオ UI        | src/components/editor/AudioPanel.tsx |
+| 波形 peaks / cache   | src/lib/waveform.ts · src/lib/waveformAlgo.ts |
+| クリップ波形 SVG     | src/components/editor/TimelineClip.tsx |
+| check:waveform       | scripts/check-waveform.mjs           |
+| preview              | src/components/editor/Preview.tsx    |
+| 音声ミックスロジック | src/lib/audioMix.ts                  |
+| 型定義               | src/lib/types.ts                     |
+| project sanitize     | src/lib/projectSanitize.ts           |
+| project store        | src/store/projectStore.ts            |
+| export               | electron/ffmpeg.ts                   |
+| Phase B fixtures     | fixtures/export/phase-b/             |
+| Phase B check        | scripts/check-phase-b-export.mjs     |
+
+---
+
+## Phase C — カラー・ルック
+
+### 状態サマリ（単一ソース・短文）
+
+| 区分 | 状態 | 内容 |
+|------|------|------|
+| **C-1** | **Done** | `presetFilter` / brightness / contrast / saturation の **preview CSS 近似** |
+| **C-2** | **Main Done** | LUT パーサー、`readCubeLutFile` IPC、WebGL プレビュー、fallback、DPR / resize / rAF 仕上げ、目視スモーク |
+| **C-3** | **Main Done** | hue / 色温度 UI、sanitize、preview CSS 近似、export FFmpeg 反映、preview/export **順序** check |
+
+### Phase C-1（Done）
+
+- **preview**: 映像・静止画クリップに **`presetFilter` + colorGrade（brightness / contrast / saturation）** を CSS `filter` で近似（`src/lib/previewLook.ts`、`Preview.tsx`）。
+- **export**: FFmpeg **canonical**（`electron/ffmpeg.ts` の `buildClipVideoFilterParts`）。
+- **回帰**: `npm run check:preview-look`（`scripts/check-preview-look.mjs`）。
+
+### Phase C-2 — LUT preview（WebGL）
+
+**全体: Main Done**（下記 C-2a〜2f は実装の内訳。**pixel 一致・E2E 自動化・実機ベンチ**は Remaining）。
+
+**方針（設計メモ）**
+
+- **Export**: 従来どおり **`lut3d=file='…':interp=tetrahedral`**（グラフは触らない）。**`ass='…'`** を維持（`ass=file='…'` は禁止）。
+- **Preview**: **WebGL フラグメントシェーダ**で 3D LUT をサンプリングし **近似**。**CSS `filter` では LUT を再現しない**（C-1 の CSS は preset / colorGrade のみ）。
+- **`.cube`**: テキストパーサー **`src/lib/lutCube.ts`**（`parseCubeLut`）。`#` コメント・空行を無視。`TITLE` / `LUT_3D_SIZE` / `DOMAIN_MIN` / `DOMAIN_MAX` と **`size^3` 行の RGB** を検証。
+- **キャッシュ**: **`makePreviewLutCacheKey`** — IPC 成功時は **`path + mtimeMs + sizeBytes`**。パース結果を保持し **毎フレーム parse しない**。
+- **読み込み**: renderer は **fs 禁止**。main の **`media:readCubeLutFile`**（`electron/ipc/media.ts`）で UTF-8 読み込み。拡張子 `.cube` 必須、**32MB 上限**、失敗は `ok: false` + `reason`。
+- **preload**: `window.electronAPI.readCubeLutFile`（`src/electron.ts` 型）。
+- **失敗時**: preview は LUT をスキップ（警告は UI / `console`）。export はジョブ側の既存エラー処理。
+
+#### Phase C-2a（Done）
+
+- **`.cube` パーサー**（`lutCube.ts` の `parseCubeLut`）
+- **`readCubeLutFile` IPC**（`electron/ipc/media.ts`・preload・`src/electron.ts`）
+- **キャッシュキー**（`makePreviewLutCacheKey` / `makePreviewLutCacheKeyFromReadResult`）
+
+#### Phase C-2b（Done）
+
+- **LUT 2D アトラス**（`previewLutAtlas.ts`：寸法・RGBA 詰め・再 upload スキップ判定）
+- **WebGL レンダラー基盤**（`previewLutWebgl.ts`：`createPreviewLutRenderer` / `PreviewLutRenderer`、LUT アトラス upload。**シェーダ trilinear は C-2c で実装**）
+- **回帰**: `npm run check:lut-cube`（パース + キャッシュキー + アトラス）
+
+#### Phase C-2c（Done）
+
+- **`Preview.tsx` 統合**（`lutPath` がある video/image のみ：`readCubeLutFile` → `parseCubeLut` → `setLut`、`requestAnimationFrame` で `render`。**`lutPath` 変更時のみ** IPC。LUT 合成 canvas は **telop の下**（z-order）、**telop には LUT 非適用**）
+- **CSS ルック**は **`ready` 時のみ LUT canvas**、それ以外は **source**（二重適用なし）
+- **シェーダ trilinear**（2D アトラス、FFmpeg **`lut3d` tetrahedral** とは非一致）
+- **fallback**: 失敗時は **従来の video/img**
+
+#### Phase C-2d（Partial / 主要 Done）
+
+- **`lutPreviewState`**: `disabled` | `loading` | `ready` | `fallback`（`Preview.tsx`）
+- **開発時のみ** `console.warn`（`import.meta.env.DEV`、**パスあたり各理由 1 回**、**render 失敗は rAF ループで 1 回**）
+- **`previewLutPreviewUi.ts`**: `previewLookStyleTarget` / `lutPreviewShowLutOverlay` / `lutPreviewIsDisabled`（`check:lut-cube` で純粋 assert）
+
+#### Phase C-2e（Partial / 主要 Done）
+
+- **目視確認手順**: `fixtures/export/phase-c/README.md`（identity / 強め LUT / レイヤー / fallback / テロップ非適用 / export canonical）
+- **強めテスト LUT**: `fixtures/export/phase-c/media/warm-strong-lut.cube`（自前・`LUT_3D_SIZE 4`）。identity は Phase A `identity-lut.cube`
+- **`check:lut-cube`**: warm LUT の **title / size / 行数 / 代表 RGB**（自動・Electron 不要）
+
+#### Phase C-2f（Partial / 主要 Done）
+
+- **`previewLutLayout.ts`**: **object-contain 表示 CSS サイズ**・**`clampPreviewLutDpr`**（上限 `PREVIEW_LUT_DPR_MAX`）・**backing 整数サイズ**（`check:lut-cube` で assert）
+- **`previewLutWebgl.render(source, layout)`**: viewport / canvas backing をレイアウトに同期（ソース解像度は `texImage2D`、**アスペクトは表示と一致**）
+- **`Preview.tsx`**: **再生中 video のみ** `requestAnimationFrame` ループ（pause / 静止画は依存変更時のみ描画）・**LUT canvas `ResizeObserver`** + `window.resize`
+
+**Remaining（LUT preview の本格検証・仕上げ）**
+
+- **pixel-level 比較**、preview / export **差分の自動検証**
+- **実機性能**（ベンチ・長尺・極端解像度）、**tetrahedral 近似**、**許容差定義**
+- **fallback UI**（ユーザー向けトースト等）
+
+**入口**
+
+- `src/lib/lutCube.ts` — `.cube` パース
+- `src/lib/previewLutAtlas.ts` — アトラス純粋関数
+- `src/lib/previewLutLayout.ts` — DPR・object-contain・backing（C-2f）
+- `src/lib/previewLutWebgl.ts` — WebGL + trilinear
+- `src/lib/previewLutPreviewUi.ts` — LUT 表示用純粋ヘルパ
+- `src/lib/previewLut.ts` — キャッシュキー・re-export
+- `src/components/editor/Preview.tsx` — LUT レイヤー
+- **`fixtures/export/phase-c/README.md`** — LUT preview **目視スモーク**
+- main IPC **`media:readCubeLutFile`** + preload
+- **回帰**: `npm run check:lut-cube`
+
+### Phase C-3（Main Done）— hue / 色温度
+
+- **型**: `ColorGrade.hue`（−180〜180）・`temperature`（−100〜100）は既存（`src/lib/types.ts`）。
+- **sanitize**: `sanitizeColorGrade`（`src/lib/projectSanitize.ts`）を **video / image クリップ**の読み込み時に適用。
+- **UI**: `EffectsPanel` — **色相**・**色温度**スライダー、**カラーグレードを既定に戻す**。
+- **preview**: `hue-rotate` + `buildCssTemperatureApprox`（export **`colorbalance`** とは近似・**厳密一致ではない**）。
+- **export**: `src/lib/colorGradeFfmpeg.ts` の **`buildColorGradeFfmpegFilterParts`** — ルックプリセットの直後に **`eq` → `hue=h=…` → `colorbalance`** を順結合（続けて **`lut3d`** → fade → fps。ASS / 音声は非変更）。
+- **回帰**: `check:preview-look` が **CSS** と **FFmpeg 断片の順序**を assert（**pixel 一致や export 文字列の E2E は未自動化**）。
+
+### Partial（共通）
+
+- preview と export の **見た目は近似**（curves / eq / **LUT 補間** / **hue・色温度の CSS と FFmpeg** の厳密一致ではない）。
+- ColorGrade の **highlights / shadows / sharpness** は **UI・配線とも未**。
+
+### Remaining（Phase C 以降）
+
+1. **LUT preview 本格検証・仕上げ**: **pixel 一致・自動差分**、**実機性能**、**tetrahedral 近似**、**fallback UI**（C-2e〜2f で **手順・素材・レイアウト純粋関数・DPR/rAF** まで。目視・ベンチの記録は人手）。
+2. **色の厳密一致**: **色空間**、**temperature の精密実装**（`colorbalance` 近似の限界）、**LUT と eq / hue / 色温度の合成順**の検証、**export / preview の pixel-level 比較**（C-3 は方向性のみ自動チェック）。
+3. **カラーホイール相当**: UI と preview・export への拡張（C-3 で hue / 温度の足場あり）。
+4. **著作権フリー LUT**: 同梱 LUT のライセンス整理（ユーザー指定 .cube は既存）。
+
+---
+
+## Phase D — パフォーマンス・配布
+
+| 項目 | 状態 | 内容の単一ソース |
+|------|------|-------------------|
+| **D-1** HW encoder | Main Done | `exportVideoEncoder.ts` / `electron/ffmpeg.ts`、`check:export-encoder` |
+| **D-2** export presets | Main Done | `exportPresets.ts`、`check:export-presets` |
+| **D-3** export diagnostics | Main Done | `exportDiagnostics.ts`、コンソール `[vela-export-diagnostics]`、`check:export-diagnostics` |
+| **D-4** diagnostics log save | Partial / Main Done | IPC `export:saveLastDiagnostics`、`ExportModal` |
+| **D-5** platform smoke checklist | Main Done | **`docs/export-platform-smoke.md`**（手順）、**`fixtures/export/README.md`**（CI と実機の索引）、**`check:export-platform-smoke-doc`**（必須見出しのみ CI） |
+
+**CI と実機の分担:** **GitHub Actions** は **fixture + 純粋 check** が中心（**HW 実エンコードは検証しない**）。**HW encode・各 OS の書き出し可否**は **実機スモーク**（D-5 チェックリスト）。**Linux VAAPI** は **未実装**。**フォールバック**は **ソフトウェアへの再試行が 1 回だけ**。
+
+### Phase D-1（Main Done）— ハードウェアエンコード整理
+
+- **対応（実装済み）**
+  - **macOS**: `h264_videotoolbox` / `hevc_videotoolbox`（明示 **VideoToolbox** または **自動**）
+  - **Windows（自動）**: `h264_nvenc` / `hevc_nvenc`（`-rc vbr -preset p4`）
+  - **Windows（明示）**: **NVENC**、**QSV**（`h264_qsv` / `hevc_qsv`、`-preset medium`）、**AMF**（`h264_amf` / `hevc_amf`、`-quality balanced`）
+  - **ソフトウェア**: `libx264` / `libx265`（`-preset medium`、プリセットの `-b:v`）
+- **未実装**: **Linux VAAPI**、Linux 上の **自動 HW**。Linux の **自動**は常にソフトエンコード。Linux から **NVENC を明示**した場合は API 上は NVENC を試す（UI では Windows のみ選択可）。
+- **UI**: `ExportModal` — **ソフト / 自動 / VideoToolbox / NVENC / QSV / AMF**。`getRuntimePlatform` IPC で OS に合わず無効な項目は **disabled**。**自動**は HW 失敗時 **1 回だけ** `libx264`/`libx265` に再試行（`stderr` に `[vela-export]`）。
+- **実装**: `src/lib/exportVideoEncoder.ts`（純粋解決）、`electron/ffmpeg.ts`（出力オプション・`+faststart` 維持・filter / ASS / 音声は非変更）。
+- **回帰（GPU 不要）**: `npm run check:export-encoder`（エンコーダ名・OS 組み合わせの assert）。
+- **CI**: **HW エンコードの実エンコードは検証しない**（Linux ランナー・GPU 非依存）。上記 **純粋チェックのみ**ワークフローに含めてよい。
+- **実機で確認したい項目**: 各 GPU ドライバ・FFmpeg ビルド差での **NVENC / QSV / AMF / VideoToolbox** の成否、**HEVC** の利用可否、**ビットレート感**（CRF 相当は未使用、`-b:v` ベース）。
+
+### Phase D-2（Main Done）— 書き出しプリセット整理・拡張
+
+- **プリセット ID**: `custom` / `web_1080p` / `web_720p` / `sns_1080p` / `archive_4k`（旧 UI の `youtube_hd` 等は `sanitizeExportPresetId` で新 ID に正規化）。
+- **純粋ロジック**: `src/lib/exportPresets.ts`（`EXPORT_PRESET_DEFINITIONS`、`resolveExportPresetSettings`、`sanitizeExportPresetId`）。
+- **UI**: `ExportModal` でプリセット選択。固定プリセットはコーデック・解像度・fps・ビットレートを表示のみ。手動編集は **`custom`**。「現在のプリセットをベースにカスタムへ」で固定値をコピーしてから編集可能。
+- **FFmpeg**: 既存どおり `settings.preset` を参照（**`+faststart` 維持**、filter_complex / ASS / 音声チェーンは非変更）。HW エンコーダ（D-1）と併用可。
+- **回帰（GPU 不要）**: `npm run check:export-presets`。
+
+### Phase D-3（Main Done）— Export diagnostics / 失敗レポート整理
+
+- **目的**: 書き出し失敗時に **ffmpeg・エンコーダ・filter・HW フォールバック**の状態を追いやすくする（配布前の診断性向上。大規模機能ではない）。
+- **純粋ロジック**: `src/lib/exportDiagnostics.ts`（`tailStderr`、`redactOrTrimArgv`、`previewFilterComplex`、`parseFfmpegExitCode`、`formatExportErrorSummary`、`formatExportDiagnosticsLogBlock`、`userFacingMessageLooksSafe`）。
+- **メインプロセス**: `electron/ffmpeg.ts` — 各失敗試行で `[vela-export-diagnostics]` ログ（stderr tail・argv 要約・終了コード・プリセット ID・解像度要約・出力パス・試行フェーズ）。**`VELA_EXPORT_DEBUG=1` / `VELA_PHASE_A_DEBUG=1`** のときのみ **filter_complex 全文** と **argv 全文**（既存 `vela-phase-a-debug` 出力と整合）。
+- **HW フォールバック**: 1 回目失敗後の再試行は従来どおり。成功時 **`[vela-export] Software encode retry succeeded after hardware failure.`** をログ。ユーザー向け `Error.message` は **短文のみ**（filter / 長い stderr は含めない）。
+- **UI**: `useExport` がレンダラ `console.error`。`ExportModal` は失敗時に短文 + メインプロセスログ参照の注記。
+- **回帰（GPU 不要）**: `npm run check:export-diagnostics`（保存ドキュメント整形の assert を含む）。
+
+### Phase D-4（Partial / Main Done）— 診断ログのファイル保存導線
+
+- **目的**: 書き出し失敗時にユーザーが **サポート用ログを保存・共有**しやすくする（Phase D-3 の診断を再利用）。
+- **メイン**: `electron/ffmpeg.ts` 内モジュール状態で直近ランの **設定要約 + 各 FFmpeg 試行の `ExportDiagnostics`** を保持（fixture が ffmpeg チャンクのみ import するためバッファは ffmpeg に同居）。書き出し成功時は **クリア**。
+- **IPC**: `export:getLastDiagnostics` / `export:saveLastDiagnostics`（`preload` → `window.electronAPI`）。保存は **ユーザーの保存ダイアログ**で `.txt` / `.log`。
+- **純粋整形**: `buildExportDiagnosticsSaveDocument`（`src/lib/exportDiagnostics.ts`）。先頭に **プライバシー注意**、設定 JSON 要約、試行ごとに `formatExportDiagnosticsLogBlock`。**`VELA_EXPORT_DEBUG` / `VELA_PHASE_A_DEBUG`** が有効だった保存時のみ、全文 argv/filter が attempt に載っていれば含まれる。本文は **`MAX_EXPORT_DIAGNOSTICS_SAVE_DOC_CHARS`** で上限。
+- **UI**: `ExportModal` 失敗ブロックに **「診断ログを保存…」** とローカルパス注意。`useExport.saveExportDiagnosticsLog`。
+
+### Phase D-5（Main Done）— 配布前 export smoke / プラットフォームチェックリスト
+
+- **目的:** D-1〜D-4 を **macOS / Windows / Linux** で配布前に追えるよう **手順を文書化**し、**軽い doc 検証**を CI に載せる（**実機 GPU は不要**）。
+- **手順:** `docs/export-platform-smoke.md`（共通・各 OS・失敗時ログ・`+faststart`・プリセット・フォールバック 1 回・VAAPI 未実装の明示）。
+- **索引:** `fixtures/export/README.md`（CI で回すもの vs 実機スモークの整理、phase-a/b/c README へのリンク）。
+- **CI:** `npm run check:export-platform-smoke-doc`（必須見出し・キーワードの存在チェックのみ）。
+
+#### Remaining（Phase D 継続）
+
+1. **可変フレームレート（VFR）方針**: UI・`-fps_mode` / `-vsync`・プレビューとの整合。
+2. **SNS 別の細分化 preset**（表記・推奨ビットレート差分）。
+3. **実機画質・各プラットフォーム互換**のアップロード検証（D-5 チェックリストの実行結果を記録するとよい）。
+4. **ファイルサイズ・ビットレートの実測**（長尺・シーン別）。
+5. **代表 stderr / 診断ログサンプル**の蓄積（匿名化テンプレ。D-5 の保存ログ形式を流用）。
+6. **クラッシュレポート**連携（未着手）。
+7. **GUI 内ログビューア**（ファイル保存に加え、モーダル内で stderr 要約を読む等）。
+
+---
+
+## Phase E — AI 字幕・テキスト
+
+### Phase E-1（Main Done）— 字幕データモデル + SRT/VTT import-export 土台
+
+- **型:** `SubtitleSegment` / `SubtitleTrack`、`Project.subtitleTracks`（テロップクリップとは別）。
+- **サニタイズ:** `projectSanitize` — 旧プロジェクトは `subtitleTracks: []`、セグメントの時間・confidence を正規化。
+- **純粋:** `src/lib/subtitleFormat.ts`（`parseSrt` / `serializeSrt` / `parseVtt` / `serializeVtt`、タイムスタンプ、最低限のマークアップ除去、`flattenSubtitleTracksForExport`）。
+- **テロップ橋:** `src/lib/subtitleTelopBridge.ts` — セグメント→既定テロップクリップの最小変換（`applySubtitleTrackToTelop` から利用）。
+- **IPC/UI:** `dialog:readSubtitleFile` / `dialog:saveSubtitleFile`、エディタ右パネル **「字幕」**（`SubtitleFilePanel`）。Whisper は **後続**（`AutoCaptionPanel` は従来どおり）。
+- **回帰（GPU 不要）:** `npm run check:subtitles`。
+
+### Phase E-2（Main Done）— 字幕トラック編集 UX
+
+- **UI:** `SubtitleFilePanel` — トラック選択、トラック名・言語、キュー一覧（開始/終了/テキスト）、追加・削除、開始時刻順ソート、空トラック追加・トラック削除。既存の SRT/VTT 取り込み・保存・先頭トラック→テロップ反映・クリアは維持。
+- **再生連動:** 再生ヘッド付近のキューを強調、キュー行クリックで `editorStore.currentTime` を開始秒へシーク。
+- **Store:** `projectStore` に `addEmptySubtitleTrack` / `updateSubtitleTrack` / `removeSubtitleTrack` / `addSubtitleSegment` / `updateSubtitleSegment` / `removeSubtitleSegment` / `sortSubtitleSegments` を集約。編集時は `applySubtitleSegmentPatch`（sanitize 込み）で正規化。
+- **純粋:** `subtitleFormat.ts` の `applySubtitleSegmentPatch` / `sortSubtitleSegmentsByStart`（`check:subtitles` で assert）。
+
+### Phase E-3（Main Done）— transcription job mock / Whisper 連携の土台
+
+- **型:** `TranscriptionJob` / `TranscriptionOptions` / `TranscriptionJobStatus`（`src/lib/types.ts`）。
+- **純粋:** `src/lib/mockTranscription.ts` — ソース検証、mock セグメント生成（タイムライン尺が取れればその範囲内）、キャンセル用の純粋補助。`npm run check:transcription`。
+- **Store:** `src/store/transcriptionStore.ts` — `startMockTranscription` / `cancelTranscription` / `clearTranscriptionJobs`。**Whisper 推論・モデルダウンロードは未実装**。
+- **プロジェクト反映:** `projectStore.addSubtitleTrackFromTranscription` / `applyTranscriptionResultToSubtitleTrack`（E-4 で集約）。
+- **UI:** `TranscriptionMockSection`（`SubtitleFilePanel` 内）— 言語・モデル規模（将来用）・mock 実行・進捗・字幕トラックへ追加。
+
+### Phase E-4（Main Done）— transcription engine interface / 依存整理
+
+- **エンジン I/F:** `src/lib/transcriptionEngine.ts` — `TranscriptionEngineRequest` / `TranscriptionEngineResult` / `TranscriptionProgressEvent`、`runMockTranscriptionEngine` / `runWhisperLocalTranscriptionEngine` / `runTranscriptionEngine`。`TranscriptionEngineId` は `types.ts` に定義し `transcriptionEngine` から再エクスポート（型循環回避）。
+- **mock ロジック:** セグメント生成・検証は `mockTranscription.ts` のまま。進行タイマーと完了処理はエンジン層へ移動し、`transcriptionStore` は `onProgress` でジョブを更新するだけ。
+- **依存:** `transcriptionStore` は `projectStore` を参照しない。セッションは `src/store/sessionActions.ts`（`resetEditorSessionAndClearTranscriptionJobs` / `clearTranscriptionJobsOnly`）経由で `projectStore` が呼び出し、**Vite の dynamic/static import 警告を解消**。
+- **UI:** `applyTranscriptionResultToSubtitleTrack` は `projectStore` のみ（`TranscriptionMockSection` は同メソッドを `projectStore` から取得）。
+
+### Phase E-5（Main Done）— Whisper local runner skeleton / 実装方針メモ
+
+- **Runner skeleton:** `src/lib/whisperLocalRunner.ts` — `WhisperLocalRunnerConfig`、`validateWhisperLocalConfig`、`buildWhisperLocalArgs`（whisper.cpp 系 CLI を想定した argv。実バイナリのフラグ差は接続時に合わせる）、`parseWhisperJsonOrSrtOutput`（stub）。
+- **エンジン接続:** `runWhisperLocalTranscriptionEngine` はソース検証 → `validateWhisperLocalConfig`（`deps.whisperLocalConfig`、未設定は失敗）→ 設定が揃っても **main IPC 未接続のため** `WHISPER_LOCAL_USER_MESSAGE_NOT_WIRED` で失敗。mock の挙動は不変。
+- **IPC メモ（未実装）:** `electron/ipc/whisper-local-ipc-memo.md` — main で `spawn`、進捗は stderr/stdout または IPC イベント、取消は `kill`、一時出力とモデル・バイナリパスは userData / ユーザー指定。
+- **Store:** `startTranscription(engineId, …)` を追加し `startMockTranscription` はそのラッパー。
+
+#### Whisper 実装候補の整理（初期方針）
+
+| 候補 | 概要 | 長所 | 注意 |
+|------|------|------|------|
+| **whisper.cpp** | C++、GGML/GGUF、CLI | オフライン・MIT 的ライセンス、CPU で動作しやすい | バイナリ同梱は OS 別ビルド・サイズ。**MIT ライセンス**（利用条件を配布文書に明記）。 |
+| **faster-whisper** | CTranslate2 + Python 系 | 速度・メモリ効率 | **ランタイム同梱が重い**、Electron からは CLI ラッパーまたは別プロセス管理が現実的。 |
+| **whisper.cpp CLI 同梱** | アプリに `main` 相当をバンドル | ユーザーが別途バイナリを取りに行かない | パッケージ肥大、コード署名・**GPL と混同しない**（whisper.cpp は MIT）。 |
+| **ユーザー指定 binary** | 設定でパス指定 | 配布責務を抑えられる、開発が速い | サポート問い合わせ増、**パス検証・セキュリティ**必須。 |
+| **モデルファイル** | GGUF 等を userData またはユーザー指定 | 再配布モデルはライセンス確認（例: OpenAI Whisper 派生の利用条件） | **モデル管理 UI・ダウンロード導線**が別途必要。 |
+| **CPU / GPU** | CoreML / CUDA / Vulkan 等は whisper.cpp ビルド次第 | GPU で実時間に近づけられる | CI・同梱・フォールバック方針が複雑。**既定は CPU**、GPU はオプションが無難。 |
+
+**初期方針（Vela）:** 第一歩は **whisper.cpp 系の CLI をユーザー指定パスで `spawn`**（将来オプションで同梱）。**モデルはユーザー配置またはアプリ内ダウンロード導線（後続）**。**GPU は後追い**で CPU 必達を優先。ライセンスは **whisper.cpp（MIT）・モデル・FFmpeg 等を README / 製品メモに分離記載**。
+
+#### Remaining（Phase E）
+
+1. **実 binary 実行**（main IPC、`spawn`、stderr パース、リトライ）。
+2. **モデル管理 UI** と **モデルダウンロード導線**（キャッシュパス・失敗時メッセージ）。
+3. **長尺チャンク分割**と結合。
+4. **実 progress**（取消は `child.kill`）。
+5. **言語自動判定**。
+6. **GPU / CPU** オプション（ビルドフラグ・設定画面）。
+7. **波形上での字幕ドラッグ**（タイムライン上のキュー直接操作）。
+8. **複数トラック編集**のさらなる効率化（一括操作・タブ等）。
+9. **キーボード操作**（ジャンプ、分割、行移動など）。
+10. **ASS / テロップ**: セグメント→テロップのスタイルマッピング・一括生成の洗練。
+
+---
+
+# 技術メモ
+
+## FFmpeg / filter_complex
+
+- filter_complex の入力インデックス管理は electron/ffmpeg.ts を基準に拡張する。
+- ASS 書き込みは buildAssBurnInFilter のみを使う。
+- ass と subtitles のフィルタ文字列を混同しない。
+- Phase A 回帰は以下で確認する。
+
+bash npm run fixture:phase-a:verify
+
+- Phase B 回帰は以下で確認する。
+
+bash npm run fixture:phase-b:verify
+
+## Debug
+
+- VELA_PHASE_A_DEBUG=1
+- VELA_EXPORT_DEBUG=1
+- FFMPEG_BIN=/path/to/ffmpeg
+
+を使って、filter graph・argv・ASS・バイナリ差を切り分ける。
+
+## Export / HW エンコーダ
+
+- 解決ロジックの単一ソース: `src/lib/exportVideoEncoder.ts`（`npm run check:export-encoder`）。
+- 書き出しプリセットの単一ソース: `src/lib/exportPresets.ts`（`npm run check:export-presets`）。
+- 失敗時ログ整形の単一ソース: `src/lib/exportDiagnostics.ts`（`npm run check:export-diagnostics`）。ファイル保存は **`buildExportDiagnosticsSaveDocument`** + IPC `export:saveLastDiagnostics`。
+- メインの結線: `electron/ffmpeg.ts`（HW 失敗時は `[vela-export] hardware encode failed; retrying with software…` のあと **ソフト 1 回**）。**Phase A fixture** は `ffmpeg-*.js` チャンクのみ Node で import するため、`electron.vite.config.ts` の **`manualChunks`** で `src/lib/exportDiagnostics` を **`export-diagnostics-*.js`** に分離し、ffmpeg チャンクが `main.js`（Electron 名 import）を引かないようにしている。
+- **配布前の実機 export スモーク:** `docs/export-platform-smoke.md`。CI は **`check:export-platform-smoke-doc`** でドキュメント欠落のみ検知。**HW 実機は CI 外**。
+
+## Subtitle（ファイル字幕）
+
+- データモデル・SRT/VTT: `src/lib/types.ts`（`SubtitleTrack`）、`src/lib/subtitleFormat.ts`（E-2: `applySubtitleSegmentPatch` / `sortSubtitleSegmentsByStart`）。
+- 編集 UI・store: `src/components/editor/SubtitleFilePanel.tsx`、`src/store/projectStore.ts`（字幕 CRUD、`addSubtitleTrackFromTranscription`）。
+- 文字起こし: `src/lib/mockTranscription.ts`、`src/lib/transcriptionEngine.ts`、`src/lib/whisperLocalRunner.ts`、`electron/ipc/whisper-local-ipc-memo.md`（将来 IPC）、`src/store/transcriptionStore.ts`、`src/store/sessionActions.ts`、`src/components/editor/TranscriptionMockSection.tsx`。純粋チェック: `npm run check:transcription`。
+- テロップへの最小変換: `src/lib/subtitleTelopBridge.ts`。
+- 純粋チェック: `npm run check:subtitles`。
+
+## Preview
+
+- テロップは telopRenderer / getTelopAssAnchor / telopAss で共有アンカーに寄せ済み。
+- ルック: **presetFilter + colorGrade** を `previewLook.ts` の CSS で近似。**LUT** は export の `lut3d` が正；preview は **`Preview.tsx` + `previewLutWebgl`（trilinear）** + **`lutPreviewState`（C-2d）** + **`previewLutLayout`（C-2f DPR/backing）**。telop は LUT 非適用。**目視スモーク**: `fixtures/export/phase-c/README.md`。
+- オーディオは Phase B で volume / mute / pan / fade / master を反映済み。
+
+## EffectsPanel
+
+- 実コントロール + projectStore + export は接続済み。
+- preview は **CSS 近似** + **LUT 時は WebGL レイヤー**（`Preview.tsx`）。失敗時は CSS のみ。
+- 未実装フィルターは disabled + 説明でよい。
+
+---
+
+# 完了の定義
+
+このロードマップを「達成」とみなす条件の例。
+
+- ルック / カラー / LUT の主要項目が UI から操作でき、preview と export の両方に反映される。
+- 映像クリップ間のトランジションが安定して書き出せる。
+- 音声が複数クリップでも意図したミックスになり、ラウドネス / フェード / ducking を UI から制御できる。
+- テロップが preview と export で大きく見え方が変わらない。
+- オプションで HW エンコードが選べ、失敗時に安全にフォールバックできる。
+- Phase A / B の fixture verify が CI で継続的に通る。
+
+---
+
+# 参照パス
+
+| 領域             | パス                                                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 書き出しコア     | electron/ffmpeg.ts                                                                                                                                            |
+| HW エンコーダ解決（純粋） | src/lib/exportVideoEncoder.ts、`npm run check:export-encoder`                                                                                         |
+| Export UI / hook | src/components/editor/ExportModal.tsx, src/hooks/useExport.ts                                                                                                 |
+| Project store    | src/store/projectStore.ts                                                                                                                                     |
+| テロップ         | src/lib/telopAss.ts, src/lib/telopExportGeometry.ts, src/lib/telopRenderer.ts, src/components/telop/TelopEditor.tsx, src/components/telop/TelopAnimPicker.tsx |
+| Effects          | src/components/editor/EffectsPanel.tsx                                                                                                                        |
+| Preview ルック（近似） | src/lib/previewLook.ts, src/components/editor/Preview.tsx                                                                                              |
+| LUT `.cube` パース（preview 入口） | src/lib/lutCube.ts、`npm run check:lut-cube`                                                                                    |
+| LUT preview（WebGL・アトラス・レイアウト・UI ヘルパ） | src/lib/previewLutWebgl.ts, src/lib/previewLutAtlas.ts, src/lib/previewLutLayout.ts, src/lib/previewLutPreviewUi.ts, src/lib/previewLut.ts |
+| LUT preview 目視スモーク | fixtures/export/phase-c/README.md、`fixtures/export/phase-c/media/warm-strong-lut.cube` |
+| オーディオ       | src/components/editor/AudioPanel.tsx, src/components/editor/Preview.tsx, src/lib/audioMix.ts                                                                  |
+| Phase A fixtures | fixtures/export/phase-a/                                                                                                                                      |
+| Phase B fixtures | fixtures/export/phase-b/                                                                                                                                      |
+| CI               | .github/workflows/phase-a-export-fixtures.yml                                                                                                                 |
+
+---
+
+作業ブランチや Issue を切るときは Phase A〜E をラベルにすると追いやすい。

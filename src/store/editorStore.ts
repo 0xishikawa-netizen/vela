@@ -1,6 +1,10 @@
 import { create } from 'zustand'
+import { clearWaveformPeakCache, loadWaveformPeaksForPath, type WaveformPeaks } from '../lib/waveform'
 
-type PanelType = 'properties' | 'text' | 'effects' | 'audio' | 'ai'
+/** 同一ファイルへの `loadWaveform` 並行呼び出しを 1 本にまとめる */
+const waveformInflight = new Map<string, Promise<void>>()
+
+type PanelType = 'properties' | 'text' | 'subtitles' | 'effects' | 'audio' | 'ai'
 
 interface EditorStore {
   currentTime: number
@@ -11,6 +15,10 @@ interface EditorStore {
   activePanel: PanelType
   scrollLeft: number
   exportModalOpen: boolean
+  /** 音声ファイルパス → 波形 peaks（in-memory cache、`src/lib/waveform.ts` の Map と併用） */
+  waveforms: Record<string, WaveformPeaks>
+  waveformFailed: Record<string, true>
+  waveformLoading: Record<string, true>
 
   setCurrentTime: (t: number) => void
   setPlaying: (v: boolean) => void
@@ -22,9 +30,10 @@ interface EditorStore {
   setExportModalOpen: (v: boolean) => void
   /** 新規プロジェクト作成・別プロジェクトを開いたときに呼ぶ */
   resetSession: () => void
+  loadWaveform: (filePath: string) => Promise<void>
 }
 
-export const useEditorStore = create<EditorStore>((set) => ({
+export const useEditorStore = create<EditorStore>((set, get) => ({
   currentTime: 0,
   isPlaying: false,
   zoom: 80,
@@ -33,8 +42,12 @@ export const useEditorStore = create<EditorStore>((set) => ({
   activePanel: 'properties',
   scrollLeft: 0,
   exportModalOpen: false,
+  waveforms: {},
+  waveformFailed: {},
+  waveformLoading: {},
 
-  resetSession: () =>
+  resetSession: () => {
+    clearWaveformPeakCache()
     set({
       currentTime: 0,
       isPlaying: false,
@@ -44,7 +57,11 @@ export const useEditorStore = create<EditorStore>((set) => ({
       activePanel: 'properties',
       scrollLeft: 0,
       exportModalOpen: false,
-    }),
+      waveforms: {},
+      waveformFailed: {},
+      waveformLoading: {},
+    })
+  },
 
   setCurrentTime: (t) => set({ currentTime: Math.max(0, t) }),
   setPlaying: (v) => set({ isPlaying: v }),
@@ -55,4 +72,79 @@ export const useEditorStore = create<EditorStore>((set) => ({
   setActivePanel: (p) => set({ activePanel: p }),
   setScrollLeft: (x) => set({ scrollLeft: Math.max(0, x) }),
   setExportModalOpen: (v) => set({ exportModalOpen: v }),
+
+  loadWaveform: async (filePath) => {
+    const key = filePath.trim()
+    if (!key) return
+
+    const existingFlight = waveformInflight.get(key)
+    if (existingFlight) return existingFlight
+
+    const run = (async () => {
+      const st = get()
+      if (st.waveformFailed[key]) return
+      if (st.waveforms[key]?.peaks?.length) return
+
+      set((s) => ({ waveformLoading: { ...s.waveformLoading, [key]: true } }))
+
+      const api = typeof window !== 'undefined' ? window.electronAPI : undefined
+      const toU8 = (data: Uint8Array | { buffer: ArrayBuffer; byteOffset?: number; byteLength?: number }): Uint8Array => {
+        if (data instanceof Uint8Array) return data
+        return new Uint8Array(data.buffer, data.byteOffset ?? 0, data.byteLength ?? 0)
+      }
+
+      try {
+        const peaksData = await loadWaveformPeaksForPath(key, {
+          readAudioFileForWaveform: api?.readAudioFileForWaveform
+            ? async (p) => {
+                try {
+                  const r = await api.readAudioFileForWaveform!(p)
+                  if (r.ok === true)
+                    return {
+                      ok: true,
+                      data: toU8(r.data),
+                      mtimeMs: r.mtimeMs,
+                      fileSize: r.fileSize,
+                    }
+                  return { ok: false, reason: r.reason, mtimeMs: r.mtimeMs, fileSize: r.fileSize }
+                } catch {
+                  return { ok: false, reason: 'error' }
+                }
+              }
+            : undefined,
+          getWaveform: api?.getWaveform,
+          getMediaDurationSec: api?.getMediaInfo
+            ? async (p) => {
+                try {
+                  const m = await api.getMediaInfo(p)
+                  const d = m?.duration
+                  return typeof d === 'number' && Number.isFinite(d) ? d : undefined
+                } catch {
+                  return undefined
+                }
+              }
+            : undefined,
+        })
+        if (peaksData?.peaks?.length) {
+          set((s) => ({ waveforms: { ...s.waveforms, [key]: peaksData } }))
+        } else {
+          set((s) => ({ waveformFailed: { ...s.waveformFailed, [key]: true } }))
+        }
+      } catch {
+        set((s) => ({ waveformFailed: { ...s.waveformFailed, [key]: true } }))
+      } finally {
+        set((s) => {
+          const { [key]: _rm, ...rest } = s.waveformLoading
+          return { waveformLoading: rest }
+        })
+      }
+    })()
+
+    waveformInflight.set(key, run)
+    try {
+      await run
+    } finally {
+      waveformInflight.delete(key)
+    }
+  },
 }))

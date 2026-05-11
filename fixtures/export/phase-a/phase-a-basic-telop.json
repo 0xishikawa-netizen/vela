@@ -1,0 +1,203 @@
+{
+  "id": "phase-a-basic-telop",
+  "name": "Phase A — Telop ASS / align / anim",
+  "createdAt": "2026-05-01T00:00:00.000Z",
+  "updatedAt": "2026-05-01T00:00:00.000Z",
+  "duration": 8,
+  "fps": 30,
+  "aspectRatio": "16:9",
+  "resolution": { "width": 640, "height": 360 },
+  "tracks": [
+    {
+      "id": "tr-v1",
+      "type": "video",
+      "name": "映像 1",
+      "muted": false,
+      "locked": false,
+      "volume": 1,
+      "solo": false,
+      "pan": 0,
+      "clips": [
+        {
+          "id": "cv1",
+          "type": "video",
+          "sourcePath": "<REPO_ROOT>/fixtures/export/phase-a/media/video-a.mp4",
+          "timelineStart": 0,
+          "timelineDuration": 8,
+          "sourceStart": 0,
+          "sourceEnd": 8,
+          "volume": 1,
+          "speed": 1,
+          "filter": "none",
+          "colorGrade": {
+            "brightness": 0,
+            "contrast": 0,
+            "saturation": 0,
+            "hue": 0,
+            "temperature": 0,
+            "highlights": 0,
+            "shadows": 0,
+            "sharpness": 0
+          },
+          "transitionIn": { "type": "none", "duration": 0 },
+          "transitionOut": { "type": "none", "duration": 0 }
+        }
+      ]
+    },
+    {
+      "id": "tr-t1",
+      "type": "telop",
+      "name": "テロップ 1",
+      "muted": false,
+      "locked": false,
+      "volume": 1,
+      "solo": false,
+      "pan": 0,
+      "clips": [
+        {
+          "id": "ct1",
+          "type": "telop",
+          "text": "日本語\n改行",
+          "timelineStart": 0,
+          "timelineDuration": 2,
+          "position": "bottom_center",
+          "style": {
+            "fontFamily": "Noto Sans JP",
+            "fontSize": 36,
+            "fontWeight": "bold",
+            "color": "#ffffff",
+            "backgroundColor": "transparent",
+            "backgroundOpacity": 0,
+            "strokeColor": "#000000",
+            "strokeWidth": 2,
+            "shadowColor": "rgba(0,0,0,0.6)",
+            "shadowBlur": 4,
+            "shadowOffsetX": 1,
+            "shadowOffsetY": 1,
+            "letterSpacing": 0,
+            "lineHeight": 1.35,
+            "align": "center"
+          },
+          "animation": {
+            "in": "fade_in",
+            "inDuration": 0.35,
+            "out": "fade_out",
+            "outDuration": 0.35
+          },
+          "transitionIn": { "type": "none", "duration": 0 },
+          "transitionOut": { "type": "none", "duration": 0 }
+        },
+        {
+          "id": "ct2",
+          "type": "telop",
+          "text": "左・上・スライド",
+          "timelineStart": 2,
+          "timelineDuration": 2,
+          "position": "top_left",
+          "style": {
+            "fontFamily": "Noto Sans JP",
+            "fontSize": 32,
+            "fontWeight": "normal",
+            "color": "#ffeeaa",
+            "backgroundColor": "transparent",
+            "backgroundOpacity": 0,
+            "strokeColor": "#000000",
+            "strokeWidth": 2,
+            "shadowColor": "rgba(0,0,0,0.5)",
+            "shadowBlur": 0,
+            "shadowOffsetX": 0,
+            "shadowOffsetY": 0,
+            "letterSpacing": 0,
+            "lineHeight": 1.3,
+            "align": "left"
+          },
+          "animation": {
+            "in": "slide_up",
+            "inDuration": 0.45,
+            "out": "fade_out",
+            "outDuration": 0.25
+          },
+          "transitionIn": { "type": "none", "duration": 0 },
+          "transitionOut": { "type": "none", "duration": 0 }
+        },
+        {
+          "id": "ct3",
+          "type": "telop",
+          "text": "右寄せズーム",
+          "timelineStart": 4,
+          "timelineDuration": 2,
+          "position": "bottom_right",
+          "style": {
+            "fontFamily": "Noto Sans JP",
+            "fontSize": 40,
+            "fontWeight": "bold",
+            "color": "#aaddff",
+            "backgroundColor": "transparent",
+            "backgroundOpacity": 0,
+            "strokeColor": "#112233",
+            "strokeWidth": 2,
+            "shadowColor": "rgba(0,0,0,0.7)",
+            "shadowBlur": 6,
+            "shadowOffsetX": 2,
+            "shadowOffsetY": 2,
+            "letterSpacing": 0,
+            "lineHeight": 1.2,
+            "align": "right"
+          },
+          "animation": {
+            "in": "zoom_in",
+            "inDuration": 0.5,
+            "out": "fade_out",
+            "outDuration": 0.3
+          },
+          "transitionIn": { "type": "none", "duration": 0 },
+          "transitionOut": { "type": "none", "duration": 0 }
+        },
+        {
+          "id": "ct4",
+          "type": "telop",
+          "text": "中央・スライド右",
+          "timelineStart": 6,
+          "timelineDuration": 2,
+          "position": "middle_center",
+          "style": {
+            "fontFamily": "Noto Sans JP",
+            "fontSize": 34,
+            "fontWeight": "normal",
+            "color": "#ffffff",
+            "backgroundColor": "transparent",
+            "backgroundOpacity": 0,
+            "strokeColor": "#000000",
+            "strokeWidth": 1,
+            "shadowColor": "rgba(0,0,0,0.5)",
+            "shadowBlur": 2,
+            "shadowOffsetX": 1,
+            "shadowOffsetY": 1,
+            "letterSpacing": 0,
+            "lineHeight": 1.4,
+            "align": "center"
+          },
+          "animation": {
+            "in": "slide_right",
+            "inDuration": 0.4,
+            "out": "fade_out",
+            "outDuration": 0.35
+          },
+          "transitionIn": { "type": "none", "duration": 0 },
+          "transitionOut": { "type": "none", "duration": 0 }
+        }
+      ]
+    },
+    {
+      "id": "tr-a1",
+      "type": "audio",
+      "name": "BGM 1",
+      "muted": false,
+      "locked": false,
+      "volume": 1,
+      "solo": false,
+      "pan": 0,
+      "clips": []
+    }
+  ]
+}

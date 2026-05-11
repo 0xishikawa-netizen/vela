@@ -1,13 +1,14 @@
 import { useEffect, useRef } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { useProjectStore } from '../store/projectStore'
+import { computeTimelineEndSeconds } from '../lib/projectSanitize'
 
 export function usePlayback() {
   const isPlaying = useEditorStore((s) => s.isPlaying)
   const currentTime = useEditorStore((s) => s.currentTime)
   const setCurrentTime = useEditorStore((s) => s.setCurrentTime)
   const setPlaying = useEditorStore((s) => s.setPlaying)
-  const duration = useProjectStore((s) => s.current?.duration ?? 0)
+  const duration = useProjectStore((s) => computeTimelineEndSeconds(s.current))
   const raf = useRef<number>(0)
   const last = useRef<number>(0)
 

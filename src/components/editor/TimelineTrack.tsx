@@ -1,10 +1,12 @@
+import { useEffect, useMemo } from 'react'
 import type { Track } from '../../lib/types'
+import { sliceWaveformPeaksForClip } from '../../lib/waveform'
+import { useEditorStore } from '../../store/editorStore'
 import TimelineClip from './TimelineClip'
 
 type Props = {
   track: Track
   zoom: number
-  scrollLeft: number
   selectedClipId: string | null
   onSelectClip: (clipId: string) => void
   onMoveClip: (clipId: string, newStart: number) => void
@@ -22,7 +24,6 @@ const TRACK_ACCENT: Record<string, string> = {
 export default function TimelineTrack({
   track,
   zoom,
-  scrollLeft,
   selectedClipId,
   onSelectClip,
   onMoveClip,
@@ -30,6 +31,27 @@ export default function TimelineTrack({
   onTrimEnd,
   onSplitAt,
 }: Props) {
+  const waveforms = useEditorStore((s) => s.waveforms)
+  const waveformLoading = useEditorStore((s) => s.waveformLoading)
+  const waveformFailed = useEditorStore((s) => s.waveformFailed)
+  const loadWaveform = useEditorStore((s) => s.loadWaveform)
+
+  const audioPathsKey = useMemo(
+    () =>
+      track.clips
+        .filter((c) => c.type === 'audio')
+        .map((c) => c.sourcePath)
+        .sort()
+        .join('\0'),
+    [track.clips],
+  )
+
+  useEffect(() => {
+    if (track.type !== 'audio') return
+    const paths = audioPathsKey.split('\0').filter(Boolean)
+    for (const p of paths) void loadWaveform(p)
+  }, [audioPathsKey, loadWaveform, track.type])
+
   return (
     <div
       className="relative h-11"
@@ -43,7 +65,16 @@ export default function TimelineTrack({
           key={c.id}
           clip={c}
           zoom={zoom}
-          scrollLeft={scrollLeft}
+          waveform={
+            c.type === 'audio' && waveforms[c.sourcePath]
+              ? sliceWaveformPeaksForClip(waveforms[c.sourcePath]!, c)
+              : undefined
+          }
+          waveformPlaceholder={
+            c.type === 'audio' && !waveforms[c.sourcePath] && !waveformFailed[c.sourcePath]
+          }
+          waveformLoading={c.type === 'audio' ? Boolean(waveformLoading[c.sourcePath]) : false}
+          waveformFailed={c.type === 'audio' ? Boolean(waveformFailed[c.sourcePath]) : false}
           selected={c.id === selectedClipId}
           onSelect={() => onSelectClip(c.id)}
           onMoveClip={(ns) => onMoveClip(c.id, ns)}

@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { useProjectStore } from '../store/projectStore'
 import { useHistoryStore } from '../store/historyStore'
+import { computeTimelineEndSeconds } from '../lib/projectSanitize'
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
 
@@ -32,7 +33,7 @@ export function useKeyboardShortcuts() {
   const saveProject = useProjectStore((s) => s.saveProject)
   const closeProject = useProjectStore((s) => s.closeProject)
   const removeClip = useProjectStore((s) => s.removeClip)
-  const splitClip = useProjectStore((s) => s.splitClip)
+  const splitAtCurrentTime = useProjectStore((s) => s.splitAtCurrentTime)
   const replaceCurrent = useProjectStore((s) => s.replaceCurrent)
   const setPlaying = useEditorStore((s) => s.setPlaying)
   const setZoom = useEditorStore((s) => s.setZoom)
@@ -58,7 +59,7 @@ export function useKeyboardShortcuts() {
 
       if (useEditorStore.getState().exportModalOpen) return
 
-      const duration = current.duration ?? 0
+      const duration = computeTimelineEndSeconds(current)
       const frameDur = 1 / fps
 
       if (ev.code === 'Space') {
@@ -110,14 +111,9 @@ export function useKeyboardShortcuts() {
         return
       }
 
-      if (ev.key === 'b' || ev.key === 'B') {
-        const st = useEditorStore.getState()
-        if (st.selectedTrackId && st.selectedClipId) {
-          ev.preventDefault()
-          const before = useProjectStore.getState().current
-          if (before) useHistoryStore.getState().push(before)
-          splitClip(st.selectedTrackId, st.selectedClipId, st.currentTime)
-        }
+      if (ev.key === 'b' || ev.key === 'B' || ev.key === 'k' || ev.key === 'K') {
+        ev.preventDefault()
+        splitAtCurrentTime()
         return
       }
 
@@ -186,7 +182,7 @@ export function useKeyboardShortcuts() {
     saveProject,
     closeProject,
     removeClip,
-    splitClip,
+    splitAtCurrentTime,
     replaceCurrent,
     setPlaying,
     setZoom,

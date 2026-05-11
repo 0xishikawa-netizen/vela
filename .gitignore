@@ -10,6 +10,12 @@ release/
 *.log
 npm-debug.log*
 
+# Claude / 一時 worktree（誤ってコピーされた場合の Vite 監視・コミット混入を防ぐ）
+.claude/
+
+# GitHub Actions が失敗時のみ作るartifact用コピー（ローカルで再現実行したとき用）
+_phase_a_debug/
+
 # OS & editor
 .DS_Store
 Thumbs.db
@@ -25,3 +31,13 @@ Thumbs.db
 
 # Test / coverage (if added later)
 coverage/
+
+# Phase A export fixtures — generated media & path-resolved JSON
+fixtures/export/phase-a/prepared/
+fixtures/export/phase-a/out/
+fixtures/export/phase-a/media/*.mp4
+fixtures/export/phase-a/media/*.wav
+
+# Phase B export fixtures — path-resolved JSON & outputs
+fixtures/export/phase-b/prepared/
+fixtures/export/phase-b/out/

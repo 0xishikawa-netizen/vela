@@ -1,7 +1,8 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { useProjectStore } from '../../store/projectStore'
 import { useEditorStore } from '../../store/editorStore'
 import { snapToGrid } from '../../lib/timeUtils'
+import { computeTimelineEndSeconds } from '../../lib/projectSanitize'
 import { SNAP_THRESHOLD } from '../../lib/constants'
 import { useHistoryStore } from '../../store/historyStore'
 import TimelineRuler from './TimelineRuler'
@@ -30,14 +31,46 @@ export default function Timeline() {
   const selectedClipId = useEditorStore((s) => s.selectedClipId)
   const selectedTrackId = useEditorStore((s) => s.selectedTrackId)
   const zoom = useEditorStore((s) => s.zoom)
-  const scrollLeft = useEditorStore((s) => s.scrollLeft)
   const setScrollLeft = useEditorStore((s) => s.setScrollLeft)
   const setZoom = useEditorStore((s) => s.setZoom)
   const currentTime = useEditorStore((s) => s.currentTime)
   const setCurrentTime = useEditorStore((s) => s.setCurrentTime)
 
   const scrollRef = useRef<HTMLDivElement>(null)
-  const contentWidth = Math.max(800, (current?.duration ?? 60) * zoom + 400)
+  const [scrollX, setScrollX] = useState(0)
+  const [viewportW, setViewportW] = useState(800)
+  const timelineEndRaw = useProjectStore((s) => computeTimelineEndSeconds(s.current))
+  const safeZoom = Number.isFinite(zoom) && zoom > 0 ? zoom : 80
+  const safeWs = Number.isFinite(timelineEndRaw) ? Math.max(timelineEndRaw, 60) : 60
+  const contentWidth = Math.max(800, safeWs * safeZoom + 400)
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el || !current) return
+    el.scrollLeft = 0
+    setScrollX(0)
+    setScrollLeft(0)
+  }, [current?.id, setScrollLeft])
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el || !current) return
+    const ro = new ResizeObserver(() => setViewportW(el.clientWidth))
+    ro.observe(el)
+    setViewportW(el.clientWidth)
+    return () => ro.disconnect()
+  }, [current?.id])
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth)
+    if (el.scrollLeft > maxScroll) {
+      el.scrollLeft = maxScroll
+      setScrollLeft(maxScroll)
+      setScrollX(maxScroll)
+    }
+  }, [contentWidth, current?.id, setScrollLeft])
 
   const snapPoints = useCallback(() => {
     if (!current) return [0]
@@ -56,7 +89,13 @@ export default function Timeline() {
       const factor = e.deltaY > 0 ? 0.9 : 1.1
       setZoom(zoom * factor)
     } else if (Math.abs(e.deltaX) > 0 || Math.abs(e.deltaY) > 0) {
-      setScrollLeft(scrollLeft + (e.deltaX || e.deltaY))
+      const el = scrollRef.current
+      if (!el) return
+      e.preventDefault()
+      const d = e.deltaX || e.deltaY
+      const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth)
+      el.scrollLeft = Math.min(maxScroll, Math.max(0, el.scrollLeft + d))
+      // scroll イベントで store / scrollX と同期
     }
   }
 
@@ -64,8 +103,10 @@ export default function Timeline() {
     const el = scrollRef.current
     if (!el || !current) return
     const rect = el.getBoundingClientRect()
+    const st = useEditorStore.getState()
+    const z = Number.isFinite(st.zoom) && st.zoom > 0 ? st.zoom : 80
     const x = clientX - rect.left + el.scrollLeft
-    setCurrentTime(Math.max(0, x / zoom))
+    setCurrentTime(Math.max(0, x / z))
   }
 
   if (!current) return null
@@ -114,26 +155,31 @@ export default function Timeline() {
           ref={scrollRef}
           className="relative min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden"
           onWheel={onWheel}
-          onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
+          onScroll={(e) => {
+            const el = e.currentTarget
+            setScrollX(el.scrollLeft)
+            setViewportW(el.clientWidth)
+            setScrollLeft(el.scrollLeft)
+          }}
         >
           <div
             className="relative box-border"
-            style={{ width: contentWidth, minHeight: `max(${totalH}px, 100%)` }}
+            style={{ width: contentWidth, minWidth: contentWidth, minHeight: `max(${totalH}px, 100%)` }}
           >
             {/* Ruler */}
-            <div className="sticky left-0 top-0 z-10" style={{ width: contentWidth }}>
+            <div className="relative z-10" style={{ width: contentWidth, minWidth: contentWidth }}>
               <TimelineRuler
-                duration={current.duration || 120}
-                zoom={zoom}
-                scrollLeft={scrollLeft}
-                width={scrollRef.current?.clientWidth ?? 800}
+                duration={safeWs}
+                zoom={safeZoom}
+                scrollLeft={scrollX}
+                width={viewportW}
               />
             </div>
 
             {/* Tracks */}
             <div
               className="relative"
-              style={{ height: trackRows.length * 44 }}
+              style={{ width: contentWidth, minWidth: contentWidth, height: trackRows.length * 44 }}
               onMouseDown={(e) => {
                 if (e.button !== 0) return
                 seekFromClientX(e.clientX)
@@ -150,8 +196,7 @@ export default function Timeline() {
                 <TimelineTrack
                   key={t.id}
                   track={t}
-                  zoom={zoom}
-                  scrollLeft={scrollLeft}
+                  zoom={safeZoom}
                   selectedClipId={selectedTrackId === t.id ? selectedClipId : null}
                   onSelectClip={(clipId) => selectClip(t.id, clipId)}
                   onMoveClip={(clipId, ns) => {
@@ -169,8 +214,7 @@ export default function Timeline() {
               ))}
               <Playhead
                 currentTime={currentTime}
-                zoom={zoom}
-                scrollLeft={scrollLeft}
+                zoom={safeZoom}
                 height={trackRows.length * 44}
                 onSeek={setCurrentTime}
               />

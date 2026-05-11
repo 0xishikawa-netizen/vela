@@ -1,0 +1,71 @@
+{
+  "id": "phase-a-effects-export",
+  "name": "Phase A — Preset filter + colorGrade + LUT + clip fade",
+  "createdAt": "2026-05-01T00:00:00.000Z",
+  "updatedAt": "2026-05-01T00:00:00.000Z",
+  "duration": 6,
+  "fps": 30,
+  "aspectRatio": "16:9",
+  "resolution": { "width": 640, "height": 360 },
+  "tracks": [
+    {
+      "id": "tr-v1",
+      "type": "video",
+      "name": "映像 1",
+      "muted": false,
+      "locked": false,
+      "volume": 1,
+      "solo": false,
+      "pan": 0,
+      "clips": [
+        {
+          "id": "cv1",
+          "type": "video",
+          "sourcePath": "<REPO_ROOT>/fixtures/export/phase-a/media/video-a.mp4",
+          "timelineStart": 0,
+          "timelineDuration": 6,
+          "sourceStart": 0,
+          "sourceEnd": 6,
+          "volume": 1,
+          "speed": 1,
+          "filter": "vivid",
+          "lutPath": "<REPO_ROOT>/fixtures/export/phase-a/media/identity-lut.cube",
+          "colorGrade": {
+            "brightness": 12,
+            "contrast": -5,
+            "saturation": 8,
+            "hue": 0,
+            "temperature": 0,
+            "highlights": 0,
+            "shadows": -4,
+            "sharpness": 0
+          },
+          "transitionIn": { "type": "fade", "duration": 0.35 },
+          "transitionOut": { "type": "fade", "duration": 0.3 }
+        }
+      ]
+    },
+    {
+      "id": "tr-t1",
+      "type": "telop",
+      "name": "テロップ 1",
+      "muted": false,
+      "locked": false,
+      "volume": 1,
+      "solo": false,
+      "pan": 0,
+      "clips": []
+    },
+    {
+      "id": "tr-a1",
+      "type": "audio",
+      "name": "BGM 1",
+      "muted": false,
+      "locked": false,
+      "volume": 1,
+      "solo": false,
+      "pan": 0,
+      "clips": []
+    }
+  ]
+}

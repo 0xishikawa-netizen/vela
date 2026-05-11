@@ -1,0 +1,75 @@
+# Phase A / B: 実 FFmpeg 書き出し〜尺検証。システム ffmpeg 不要（ffmpeg-static / ffprobe-static）。
+name: Export fixture regression
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: export-fixtures-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  export-fixture-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # phase-a-basic-telop が Noto Sans JP を参照するため、ヘッドレスでも解決できるよう最小限だけ同梱
+      - name: Install fonts for libass (Noto CJK)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check export encoder map (pure, no GPU)
+        run: npm run check:export-encoder
+
+      - name: Check export presets (pure)
+        run: npm run check:export-presets
+
+      - name: Check export diagnostics (pure)
+        run: npm run check:export-diagnostics
+
+      - name: Check export platform smoke doc (pure)
+        run: npm run check:export-platform-smoke-doc
+
+      - name: Check subtitles format (pure)
+        run: npm run check:subtitles
+
+      - name: Check transcription job mock (pure)
+        run: npm run check:transcription
+
+      - name: Run Phase A fixture verification
+        run: npm run fixture:phase-a:verify 2>&1 | tee fixtures/export/phase-a/verify-ci.log
+
+      - name: Run Phase B fixture verification
+        run: npm run fixture:phase-b:verify 2>&1 | tee fixtures/export/phase-b/verify-ci.log
+
+      - name: Upload export fixture artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: export-fixtures-debug-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            fixtures/export/phase-a/verify-ci.log
+            fixtures/export/phase-b/verify-ci.log
+            fixtures/export/phase-a/out/
+            fixtures/export/phase-a/prepared/
+            fixtures/export/phase-a/media/
+            fixtures/export/phase-b/out/
+            fixtures/export/phase-b/prepared/

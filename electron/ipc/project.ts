@@ -16,22 +16,73 @@ async function removeFile(p: string): Promise<void> {
   await rm(p, { force: true })
 }
 
+function assertSafeProjectId(id: unknown): string {
+  if (typeof id !== 'string' || !id.trim()) throw new Error('ID が不正です')
+  const s = id.trim()
+  if (/[/\\]/.test(s) || s.includes('..')) throw new Error('無効なプロジェクト ID です')
+  return s
+}
+
 export function registerProjectIpc(projectsDir: string) {
   ipcMain.handle('project:list', async () => {
-    const files = (await readdir(projectsDir)).filter((f) => f.endsWith('.json'))
-    const projects = (await Promise.all(
-      files.map((f) => readJson<Project>(path.join(projectsDir, f)).catch(() => null)),
-    )) as (Project | null)[]
-    return projects
-      .filter((p): p is Project => p != null)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    try {
+      const files = (await readdir(projectsDir)).filter((f) => f.endsWith('.json'))
+      const projects = (await Promise.all(
+        files.map((f) => readJson<Project>(path.join(projectsDir, f)).catch(() => null)),
+      )) as (Project | null)[]
+      return projects
+        .filter((p): p is Project => p != null)
+        .sort((a, b) => {
+          const tb = new Date(b.updatedAt).getTime()
+          const ta = new Date(a.updatedAt).getTime()
+          return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0)
+        })
+    } catch (err) {
+      console.error('[vela] project:list', err)
+      return []
+    }
   })
 
-  ipcMain.handle('project:save', async (_, id: string, data: object) =>
-    writeJson(path.join(projectsDir, `${id}.json`), data),
-  )
+  ipcMain.handle('project:save', async (_, id: string, data: object) => {
+    try {
+      const safe = assertSafeProjectId(id)
+      await writeJson(path.join(projectsDir, `${safe}.json`), data)
+    } catch (err) {
+      console.error('[vela] project:save', err)
+      const msg =
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string'
+            ? err
+            : 'プロジェクトを保存できませんでした'
+      throw new Error(msg)
+    }
+  })
 
-  ipcMain.handle('project:load', async (_, id: string) => readJson(path.join(projectsDir, `${id}.json`)))
+  ipcMain.handle('project:load', async (_, id: string) => {
+    try {
+      const safe = assertSafeProjectId(id)
+      return await readJson(path.join(projectsDir, `${safe}.json`))
+    } catch (err) {
+      console.error('[vela] project:load', err)
+      const code = typeof err === 'object' && err && 'code' in err ? (err as { code?: string }).code : undefined
+      const msg =
+        code === 'ENOENT'
+          ? 'プロジェクトファイルが見つかりません。'
+          : err instanceof Error
+            ? err.message
+            : 'プロジェクトを読み込めませんでした'
+      throw new Error(msg)
+    }
+  })
 
-  ipcMain.handle('project:delete', async (_, id: string) => removeFile(path.join(projectsDir, `${id}.json`)))
+  ipcMain.handle('project:delete', async (_, id: string) => {
+    try {
+      const safe = assertSafeProjectId(id)
+      await removeFile(path.join(projectsDir, `${safe}.json`))
+    } catch (err) {
+      console.error('[vela] project:delete', err)
+      throw new Error(err instanceof Error ? err.message : '削除に失敗しました')
+    }
+  })
 }

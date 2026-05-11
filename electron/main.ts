@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu } from 'electron'
+import { app, BrowserWindow, Menu, dialog } from 'electron'
 import path from 'node:path'
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
@@ -25,6 +25,11 @@ function getWindow(): BrowserWindow | null {
 function resolvePreloadPath(): string {
   const candidates = ['preload.mjs', 'preload.js', 'index.mjs', 'index.js']
   const bases: string[] = [path.join(__dirname, '../preload')]
+  try {
+    bases.push(path.join(app.getAppPath(), 'out', 'preload'))
+  } catch {
+    /* ignore */
+  }
   // dev で main の実体パスが想定とずれる場合のフォールバック（プロジェクト直下の out/preload）
   if (!app.isPackaged) {
     bases.push(path.join(process.cwd(), 'out', 'preload'))
@@ -83,10 +88,40 @@ async function createWindow() {
   ])
   Menu.setApplicationMenu(menu)
 
-  if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
-    await mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    await mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'))
+  mainWindow.webContents.on('did-fail-load', (_ev, code, desc, url, isMainFrame) => {
+    if (!isMainFrame) return
+    console.error('[vela] did-fail-load', { code, desc, url })
+  })
+
+  const rendererUrl = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined
+  const htmlPath = path.join(__dirname, '..', 'renderer', 'index.html')
+
+  try {
+    if (rendererUrl) {
+      await mainWindow.loadURL(rendererUrl)
+    } else {
+      if (!existsSync(htmlPath)) {
+        throw new Error(`レンダラが見つかりません: ${htmlPath}\n先に npm run build を実行してください。`)
+      }
+      await mainWindow.loadFile(htmlPath)
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[vela] ウィンドウの読み込みに失敗:', msg)
+    const safe = msg.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    const body = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Vela</title></head>
+<body style="margin:0;padding:24px;font:14px system-ui;background:#1a1b20;color:#ececf1;line-height:1.6">
+<h1 style="color:#d98a8a;font-size:16px">画面を読み込めませんでした</h1>
+<p>${safe}</p>
+<p>プロジェクトのルートで <code style="background:#2a2c34;padding:2px 6px">npm run dev</code> を実行してください（Vite が起動してから Electron が接続します）。</p>
+</body></html>`
+    await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(body)}`)
+    void dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: 'Vela',
+      message: 'レンダラの読み込みに失敗しました',
+      detail: msg,
+    })
   }
 }
 
@@ -98,7 +133,7 @@ app.whenReady().then(async () => {
   registerDialogIpc(getWindow)
   registerProjectIpc(PROJECTS_DIR)
   registerMediaIpc(THUMBNAILS_DIR)
-  registerExportIpc()
+  registerExportIpc(getWindow)
   registerAiIpc(MODELS_DIR)
 
   await createWindow()

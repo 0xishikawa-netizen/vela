@@ -121,36 +121,53 @@ export default function Home() {
   const [aspect, setAspect] = useState<AspectRatio>('16:9')
   const [fps, setFps] = useState(30)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [listError, setListError] = useState<string | null>(null)
+  const [openError, setOpenError] = useState<string | null>(null)
   const [electronApiMissing, setElectronApiMissing] = useState(false)
 
-  useEffect(() => { void loadProjects() }, [loadProjects])
+  const checkElectronApi = () => {
+    if (typeof window !== 'undefined' && window.electronAPI?.saveProject && window.electronAPI?.loadProject) {
+      setElectronApiMissing(false)
+      return true
+    }
+    return false
+  }
 
-  /** preload はページ JS より先に実行されるが、起動直後のみのレースを避けるため短時間ポーリングする */
+  useEffect(() => {
+    setListError(null)
+    void loadProjects().catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : 'プロジェクト一覧を読み込めませんでした'
+      setListError(msg)
+      console.error(e)
+    })
+  }, [loadProjects])
+
+  /** preload の注入が遅れる環境向けにポーリング（諦めない）＋フォーカス時に再確認 */
   useEffect(() => {
     if (typeof window === 'undefined') return
-    if (window.electronAPI?.saveProject) {
-      setElectronApiMissing(false)
-      return
-    }
+    if (checkElectronApi()) return
     let cancelled = false
-    let n = 0
-    const max = 80
     const id = window.setInterval(() => {
       if (cancelled) return
-      n++
-      if (window.electronAPI?.saveProject) {
-        setElectronApiMissing(false)
-        window.clearInterval(id)
-        return
-      }
-      if (n >= max) {
-        setElectronApiMissing(true)
-        window.clearInterval(id)
-      }
-    }, 50)
+      if (checkElectronApi()) window.clearInterval(id)
+    }, 100)
+    const onFocus = () => {
+      checkElectronApi()
+    }
+    const onVis = () => {
+      if (document.visibilityState === 'visible') checkElectronApi()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVis)
+    const timeout = window.setTimeout(() => {
+      if (!cancelled && !window.electronAPI?.saveProject) setElectronApiMissing(true)
+    }, 8000)
     return () => {
       cancelled = true
       window.clearInterval(id)
+      window.clearTimeout(timeout)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVis)
     }
   }, [])
 
@@ -313,7 +330,7 @@ export default function Home() {
 
             {(electronApiMissing || createError) && (
               <p className="text-[11px] font-medium leading-relaxed" style={{ color: '#d98a8a' }}>
-                {createError || ELECTRON_HELP}
+                {createError || (electronApiMissing ? ELECTRON_HELP : '')}
               </p>
             )}
             <button
@@ -347,12 +364,39 @@ export default function Home() {
             >
               最近のプロジェクト
             </h2>
-            {projects.length > 0 && (
-              <span className="text-[10px] mono" style={{ color: 'var(--muted-2)' }}>
-                {projects.length} 件
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {projects.length > 0 && (
+                <span className="text-[10px] mono" style={{ color: 'var(--muted-2)' }}>
+                  {projects.length} 件
+                </span>
+              )}
+              <button
+                type="button"
+                className="text-[10px] font-medium underline-offset-2 hover:underline"
+                style={{ color: 'var(--accent)' }}
+                onClick={() => {
+                  setListError(null)
+                  void loadProjects().catch((e: unknown) => {
+                    const msg = e instanceof Error ? e.message : '一覧を読み込めませんでした'
+                    setListError(msg)
+                  })
+                }}
+              >
+                一覧を再読込
+              </button>
+            </div>
           </div>
+
+          {listError && (
+            <p className="mb-3 text-[11px] font-medium leading-relaxed" style={{ color: '#d98a8a' }}>
+              {listError}
+            </p>
+          )}
+          {openError && (
+            <p className="mb-3 text-[11px] font-medium leading-relaxed" style={{ color: '#d98a8a' }}>
+              {openError}
+            </p>
+          )}
 
           <div className="flex-1 min-h-0 flex flex-col overflow-y-auto pr-0.5">
             {projects.length === 0 ? (
@@ -380,7 +424,14 @@ export default function Home() {
                   <ProjectCard
                     key={p.id}
                     p={p}
-                    onOpen={() => void openProject(p.id)}
+                    onOpen={() => {
+                      setOpenError(null)
+                      void openProject(p.id).catch((e: unknown) => {
+                        const msg = e instanceof Error ? e.message : 'プロジェクトを開けませんでした'
+                        setOpenError(msg)
+                        console.error(e)
+                      })
+                    }}
                     onDelete={() => void deleteProject(p.id)}
                   />
                 ))}

@@ -8,6 +8,18 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: resolve(__dirname, 'electron/main.ts'),
+        output: {
+          /**
+           * fixture が `out/main/chunks/ffmpeg-*.js` だけを Node で import するため、
+           * `src/lib/exportDiagnostics` を main 本体に吸わせない（main.js が electron を引き、Node で落ちるのを防ぐ）。
+           */
+          manualChunks(id) {
+            if (id.includes(`${resolve(__dirname, 'src/lib/exportDiagnostics')}`)) {
+              return 'export-diagnostics'
+            }
+            return undefined
+          },
+        },
       },
     },
   },
@@ -19,6 +31,9 @@ export default defineConfig({
     },
   },
   renderer: {
+    define: {
+      'import.meta.env.VELA_WAVEFORM_DEBUG': JSON.stringify(process.env.VELA_WAVEFORM_DEBUG ?? ''),
+    },
     root: __dirname,
     publicDir: 'public',
     resolve: {
@@ -27,6 +42,12 @@ export default defineConfig({
       },
     },
     plugins: [react(), tailwindcss()],
+    /** Claude worktree 等がプロジェクト内にあると HMR が連発するのを防ぐ */
+    server: {
+      watch: {
+        ignored: ['**/.claude/**', '**/.git/objects/**'],
+      },
+    },
     build: {
       rollupOptions: {
         input: resolve(__dirname, 'index.html'),

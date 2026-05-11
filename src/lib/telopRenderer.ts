@@ -1,4 +1,5 @@
 import type { TelopClip, TelopAnimationType } from './types'
+import { getTelopAssAnchor, splitTelopLines, telopLineTopYs } from './telopExportGeometry'
 
 interface RenderOptions {
   canvas: HTMLCanvasElement
@@ -14,8 +15,11 @@ export function renderTelops({ canvas, telops, currentTime, width, height }: Ren
   ctx.clearRect(0, 0, width, height)
 
   for (const telop of telops) {
-    const { timelineStart, timelineDuration, style, animation, position, text } = telop
+    const { timelineStart, timelineDuration, style, animation, text } = telop
     if (currentTime < timelineStart || currentTime > timelineStart + timelineDuration) continue
+
+    const lines = splitTelopLines(text)
+    if (lines.length === 0) continue
 
     const elapsed = currentTime - timelineStart
     const remaining = timelineDuration - elapsed
@@ -28,25 +32,25 @@ export function renderTelops({ canvas, telops, currentTime, width, height }: Ren
     if (elapsed < inDur) alpha = Math.min(1, inProgress)
     if (remaining < outDur) alpha = Math.min(alpha, outProgress)
 
-    const posMap: Record<string, [number, number]> = {
-      top_center: [width / 2, height * 0.08],
-      middle_center: [width / 2, height / 2],
-      bottom_center: [width / 2, height * 0.88],
-      bottom_left: [width * 0.05, height * 0.88],
-      bottom_right: [width * 0.95, height * 0.88],
-      top_left: [width * 0.05, height * 0.08],
-      top_right: [width * 0.95, height * 0.08],
-      middle_left: [width * 0.05, height / 2],
-      middle_right: [width * 0.95, height / 2],
-      custom: [
-        (telop.customPosition?.x ?? 0.5) * width,
-        (telop.customPosition?.y ?? 0.88) * height,
-      ],
-    }
-    let [x, y] = posMap[position] ?? posMap.bottom_center
+    const { x } = getTelopAssAnchor(telop, width, height)
 
     ctx.save()
     ctx.globalAlpha = alpha
+
+    ctx.font = `${style.fontWeight} ${style.fontSize}px "${style.fontFamily}", sans-serif`
+    ctx.textAlign = (style.align ?? 'center') as CanvasTextAlign
+    ctx.textBaseline = 'top'
+
+    const fs = style.fontSize
+    const lh = style.lineHeight || 1.4
+    const gap = Math.round(fs * lh)
+    const m0 = ctx.measureText(lines[0]!)
+    const textH = Math.max(
+      fs * 0.85,
+      (m0.actualBoundingBoxAscent ?? 0) + (m0.actualBoundingBoxDescent ?? 0),
+    )
+    const tops = telopLineTopYs(height, telop, lines.length, gap, textH)
+    const blockMidY = tops[0]! + ((lines.length - 1) * gap + textH) / 2
 
     const offset = applyAnimation(
       ctx,
@@ -55,16 +59,12 @@ export function renderTelops({ canvas, telops, currentTime, width, height }: Ren
       inDur,
       elapsed,
       x,
-      y,
+      blockMidY,
       width,
       height,
     )
-    x += offset.dx
-    y += offset.dy
-
-    ctx.font = `${style.fontWeight} ${style.fontSize}px "${style.fontFamily}", sans-serif`
-    ctx.textAlign = style.align as CanvasTextAlign
-    ctx.textBaseline = 'middle'
+    const drawX = x + offset.dx
+    const drawTops = tops.map((ty) => ty + offset.dy)
 
     if (style.shadowBlur > 0) {
       ctx.shadowColor = style.shadowColor
@@ -73,15 +73,18 @@ export function renderTelops({ canvas, telops, currentTime, width, height }: Ren
       ctx.shadowOffsetY = style.shadowOffsetY
     }
 
-    if (style.strokeWidth > 0) {
-      ctx.strokeStyle = style.strokeColor
-      ctx.lineWidth = style.strokeWidth * 2
-      ctx.lineJoin = 'round'
-      ctx.strokeText(text, x, y)
+    for (let li = 0; li < lines.length; li++) {
+      const line = lines[li]!
+      const yLine = drawTops[li]!
+      if (style.strokeWidth > 0) {
+        ctx.strokeStyle = style.strokeColor
+        ctx.lineWidth = style.strokeWidth * 2
+        ctx.lineJoin = 'round'
+        ctx.strokeText(line, drawX, yLine)
+      }
+      ctx.fillStyle = style.color
+      ctx.fillText(line, drawX, yLine)
     }
-
-    ctx.fillStyle = style.color
-    ctx.fillText(text, x, y)
     ctx.restore()
   }
 }

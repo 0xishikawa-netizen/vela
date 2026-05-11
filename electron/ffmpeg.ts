@@ -1,5 +1,6 @@
 import ffmpeg from 'fluent-ffmpeg'
-import { readFile, rm } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -9,16 +10,62 @@ import type {
   MediaFile,
   VideoClip,
   ImageClip,
-  TelopClip,
-  ColorGrade,
   AudioClip,
+  HwVideoEncoder,
 } from '../src/lib/types'
 import { resolveFfmpegBinary, resolveFfprobeBinary } from './paths'
+import { buildTelopAssContent } from '../src/lib/telopAss'
+import { computeTimelineEndSeconds } from '../src/lib/projectSanitize'
+import {
+  audioMasterVolumeNormalized,
+  collectAllAudioClips,
+  effectivePanForAudioClip,
+  resolveNormalizedAudioFadeLengths,
+  stemMixGainForAudioClip,
+} from '../src/lib/audioMix'
+import { pickXfadeTransitionName } from '../src/lib/xfadeTransition'
+import {
+  collectAllTelopClips,
+  collectVisualClipEntries,
+  hasVisualClipTimelineOverlap,
+  sortVisualClipsForExport,
+} from '../src/lib/visualTimeline'
+import { buildColorGradeFfmpegFilterParts } from '../src/lib/colorGradeFfmpeg'
+import { normalizeExportPlatform, resolveExportVideoEncoder } from '../src/lib/exportVideoEncoder'
+import {
+  formatExportDiagnosticsLogBlock,
+  formatExportErrorSummary,
+  parseFfmpegExitCode,
+  previewFilterComplex,
+  redactOrTrimArgv,
+  tailStderr,
+  type ExportDiagnostics,
+  type ExportDiagnosticsRunBuffer,
+  type ExportDiagnosticsRunMeta,
+} from '../src/lib/exportDiagnostics'
 
 ffmpeg.setFfmpegPath(resolveFfmpegBinary())
-ffmpeg.setFfprobePath(resolveFfprobeBinary())
 
-const platform = process.platform
+/** 直近の書き出しラン（IPC 保存用）。チャンク単体実行（fixture）でも main を引かないよう ffmpeg 内に置く。 */
+let exportDiagnosticsRun: ExportDiagnosticsRunBuffer | null = null
+
+export function beginExportDiagnosticsRun(meta: ExportDiagnosticsRunMeta): void {
+  exportDiagnosticsRun = { meta, attempts: [] }
+}
+
+function pushExportDiagnosticsAttempt(d: ExportDiagnostics): void {
+  if (!exportDiagnosticsRun) return
+  exportDiagnosticsRun.attempts.push({ ...d })
+}
+
+export function getLastExportDiagnosticsRun(): ExportDiagnosticsRunBuffer | null {
+  return exportDiagnosticsRun
+}
+
+function clearExportDiagnosticsRun(): void {
+  exportDiagnosticsRun = null
+}
+ffmpeg.setFfprobePath(resolveFfprobeBinary())
 
 function parseFps(rate?: string): number | undefined {
   if (!rate) return undefined
@@ -39,11 +86,21 @@ export function getMediaInfo(filePath: string): Promise<MediaFile> {
       const v = meta.streams.find((s) => s.codec_type === 'video')
       const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
       const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp']
+      const rawDur = meta.format.duration as unknown
+      const durationSec =
+        typeof rawDur === 'number' && Number.isFinite(rawDur) && rawDur >= 0
+          ? rawDur
+          : typeof rawDur === 'string' && rawDur.trim() !== ''
+            ? (() => {
+                const n = parseFloat(rawDur)
+                return Number.isFinite(n) && n >= 0 ? n : undefined
+              })()
+            : undefined
       resolve({
         path: filePath,
         name: filePath.split('/').pop() || filePath.split('\\').pop() || '',
         type: imageExts.includes(ext) ? 'image' : v ? 'video' : 'audio',
-        duration: meta.format.duration,
+        duration: durationSec,
         width: v?.width,
         height: v?.height,
         fps: v?.r_frame_rate ? parseFps(v.r_frame_rate) : undefined,
@@ -97,14 +154,6 @@ export async function generateWaveform(inputPath: string): Promise<number[]> {
   }
 }
 
-function colorGradeToFilter(g: ColorGrade): string {
-  const parts: string[] = []
-  if (g.brightness !== 0) parts.push(`brightness=${(g.brightness / 100).toFixed(2)}`)
-  if (g.contrast !== 0) parts.push(`contrast=${(1 + g.contrast / 100).toFixed(2)}`)
-  if (g.saturation !== 0) parts.push(`saturation=${(1 + g.saturation / 100).toFixed(2)}`)
-  return parts.length > 0 ? `eq=${parts.join(':')}` : ''
-}
-
 function presetFilter(f: string): string {
   const map: Record<string, string> = {
     cinematic:
@@ -122,21 +171,130 @@ function presetFilter(f: string): string {
   return map[f] || ''
 }
 
-/** FFmpeg フィルタ用に絶対パスを整形 */
+/**
+ * FFmpeg フィルタ文字列へ埋め込むファイルパスをエスケープする。
+ * - 区切りは `/` に統一（Windows でも libass/ffmpeg は受け付ける）。
+ * - 単一引用符は `'` → `'\''`（フィルタ内でパス全体を `'...'` で囲む前提）。
+ *
+ * **用途の違いに注意:**
+ * - `lut3d=file='…'` は **file= が正しい**（別フィルタ）。
+ * - 将来 **`subtitles`** で SRT 等を焼くときは **`subtitles=file='…'`** 形式が適切なことが多い。
+ * - **`ass` フィルタでは `file=` を付けない**（パスは `ass='…'` 先頭または `filename=` 系。`ass=file='…'` は誤りでクラッシュしうる）。
+ *   ASS への適用は常に **`buildAssBurnInFilter`** 経由に寄せる。
+ */
 function escPathForFfmpegFile(abs: string): string {
   return abs
     .replace(/\\/g, '/')
     .replace("'", "'\\''")
 }
 
+/** Phase A fixture の SIGSEGV 切り分け・手動再実行用 */
+function isPhaseAExportDebug(): boolean {
+  return process.env.VELA_PHASE_A_DEBUG === '1' || process.env.VELA_EXPORT_DEBUG === '1'
+}
+
+function extractExportErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+function extractFfmpegStderr(err: unknown): string | undefined {
+  if (typeof err === 'object' && err !== null && 'stderr' in err) {
+    const s = (err as { stderr: unknown }).stderr
+    if (typeof s === 'string' && s.length > 0) return s
+  }
+  return undefined
+}
+
+function logExportFailureDiagnostics(
+  err: unknown,
+  ctx: {
+    attemptPhase: 'primary' | 'software_retry'
+    vcodec: string
+    primaryVcodec?: string
+    diagBase: Partial<ExportDiagnostics>
+    filterComplexStr: string
+    cmd: unknown
+  },
+): void {
+  const msg = extractExportErrorMessage(err)
+  const stderrRaw = extractFfmpegStderr(err)
+  const exitCode = parseFfmpegExitCode(msg) ?? parseFfmpegExitCode(stderrRaw ?? '')
+  let argvFull: string[] | undefined
+  try {
+    const getArgs = (ctx.cmd as { _getArguments?: () => string[] })._getArguments
+    if (typeof getArgs === 'function') {
+      argvFull = [resolveFfmpegBinary(), ...getArgs()]
+    }
+  } catch {
+    /* noop */
+  }
+  const diag: ExportDiagnostics = {
+    ...ctx.diagBase,
+    attemptPhase: ctx.attemptPhase,
+    resolvedVideoEncoderFinal: ctx.vcodec,
+    resolvedVideoEncoderFirst:
+      ctx.attemptPhase === 'primary' ? ctx.vcodec : ctx.primaryVcodec,
+    hardwareFallbackAttempted: ctx.attemptPhase === 'software_retry',
+    ffmpegExitCode: exitCode ?? null,
+    stderrTail: tailStderr(stderrRaw ?? msg),
+    filterComplexPreview: previewFilterComplex(ctx.filterComplexStr),
+    filterComplexCharCount: ctx.filterComplexStr.length,
+    hasFilterComplex: true,
+  }
+  if (isPhaseAExportDebug()) {
+    diag.filterComplexFull = ctx.filterComplexStr
+    diag.argvFull = argvFull
+    diag.argvPreview = argvFull ? redactOrTrimArgv(argvFull) : undefined
+  } else if (argvFull?.length) {
+    diag.argvPreview = redactOrTrimArgv(argvFull)
+  }
+  console.error(formatExportDiagnosticsLogBlock(diag))
+  pushExportDiagnosticsAttempt(diag)
+}
+
+/**
+ * ASS を映像へ焼きこむときの **`[in]….[out]` 用フィルタ断片（ラベルは呼び出し側）**。
+ *
+ * **再発防止（必読）:**
+ * - **`ass=file='/path'` は NG**（subtitles の `file=` と混同しやすい）。`ass` では無効オプション扱いとなり **FFmpeg static で SIGSEGV** することがある。
+ * - 正しくは **`ass='/path'`**（本関数は `'…'` 内に `escPathForFfmpegFile` を渡す）。
+ * - **`subtitles` と文字列は流用しない**（オプション形式が異なる）。
+ *
+ * **`format=yuv420p` を前後に置く理由:** upstream（trim/scale/fps 等）の pix_fmt が一定でないときでも libass 入力を yuv420p に揃え、焼いたあとエンコード前に再び yuv420p にしておく（静止画・異解像度連結時の揺らぎを抑える）。
+ *
+ * **`shaping=0`:** HarfBuzz 複雑シェイプより simple を優先し **安定性優先の暫定**。プレビューとの差や用途で **`shaping`** を変えうるので、変更はこの関数のみ触ること。
+ */
+function buildAssBurnInFilter(assAbsolutePath: string): string {
+  const esc = escPathForFfmpegFile(path.resolve(assAbsolutePath))
+  return `format=yuv420p,ass='${esc}':shaping=0,format=yuv420p`
+}
+
+/**
+ * `atrim`・`volume` 後のソース尺 `audDur` に対する `afade=in/out` 用のカンマ前置きサフィックス。
+ * フェード長の丸め・ in+out の同率縮小は **`resolveNormalizedAudioFadeLengths`**（プレビューの `calculateAudioFadeGain` と共有）。
+ * `curve=` は付けず FFmpeg 既定（プレビュー線形ゲイン積とは厳密一致しない。意図的）。
+ */
+function audioFadeAffixes(ac: AudioClip, audDur: number): string {
+  const d = Math.max(1e-4, audDur)
+  const { fadeInSec: fin, fadeOutSec: fout } = resolveNormalizedAudioFadeLengths(
+    ac.fadeIn,
+    ac.fadeOut,
+    d,
+  )
+  let parts = ''
+  if (fin > 1e-5) parts += `,afade=t=in:st=0:d=${fin.toFixed(4)}`
+  if (fout > 1e-5) {
+    const stOut = Math.max(0, d - fout)
+    const dOut = Math.min(fout, Math.max(1e-5, d - stOut))
+    parts += `,afade=t=out:st=${stOut.toFixed(4)}:d=${dOut.toFixed(4)}`
+  }
+  return parts
+}
+
 function lut3dForPath(abs: string | undefined): string {
   if (!abs || !abs.trim()) return ''
   const p = escPathForFfmpegFile(path.resolve(abs))
   return `lut3d=file='${p}':interp=tetrahedral`
-}
-
-function escapeDrawtext(text: string): string {
-  return text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/:/g, '\\:')
 }
 
 type VisualClip = VideoClip | ImageClip
@@ -150,52 +308,45 @@ function segmentOutputDuration(clip: VisualClip): number {
   return clip.timelineDuration
 }
 
-function trackMutedForAudioClip(project: Project, clip: AudioClip): boolean {
-  const t = project.tracks.find((tr) => tr.clips.some((c) => c.id === clip.id && c.type === 'audio'))
-  return t?.muted === true
-}
-
-type HwEnc = 'off' | 'auto' | 'videotoolbox' | 'nvenc' | 'qsv' | undefined
-
-function resolveVcodec(
-  codec: 'h264' | 'h265',
-  hw: HwEnc,
-): { c: string; usePresetLibx: boolean; extra: string[] } {
-  const isHevc = codec === 'h265'
-  if (hw === 'off' || hw === undefined) {
-    return { c: isHevc ? 'libx265' : 'libx264', usePresetLibx: true, extra: [] }
-  }
-  if (hw === 'videotoolbox' || (hw === 'auto' && platform === 'darwin')) {
-    if (isHevc) return { c: 'hevc_videotoolbox', usePresetLibx: false, extra: [] }
-    return { c: 'h264_videotoolbox', usePresetLibx: false, extra: [] }
-  }
-  if (hw === 'nvenc' || (hw === 'auto' && platform === 'win32')) {
-    return {
-      c: isHevc ? 'hevc_nvenc' : 'h264_nvenc',
-      usePresetLibx: false,
-      extra: ['-rc', 'vbr'],
+/**
+ * クリップ単体の映像フィルタを **カンマ結合** するための断片配列。
+ *
+ * **順序**: trim/setpts → **scale** → **presetFilter** → **ColorGrade**（**`eq`** → **`hue`** → **`colorbalance`（温度）**）→ **lut3d** → fade in/out → **fps**
+ * （テロップ ASS は別ラベルで `buildAssBurnInFilter`、音声は別入力・別チェーン）。
+ */
+function buildClipVideoFilterParts(clip: VisualClip, scaleStr: string, fpsVal: number): string[] {
+  const parts: string[] = []
+  if (clip.type === 'video') {
+    const vc = clip as VideoClip
+    if (vc.sourceStart !== undefined && vc.sourceEnd !== undefined) {
+      parts.push(`trim=start=${vc.sourceStart}:end=${vc.sourceEnd},setpts=PTS-STARTPTS`)
+    }
+    if (vc.speed && vc.speed !== 1) {
+      parts.push(`setpts=${(1 / vc.speed).toFixed(3)}*PTS`)
     }
   }
-  if (hw === 'qsv') {
-    return { c: isHevc ? 'hevc_qsv' : 'h264_qsv', usePresetLibx: false, extra: [] }
+  parts.push(scaleStr)
+  const vf = clip.type === 'video' ? (clip as VideoClip).filter : (clip as ImageClip).filter
+  const pf = presetFilter(vf ?? 'none')
+  if (pf) parts.push(pf)
+  const cgRaw = clip.type === 'video' ? (clip as VideoClip).colorGrade : (clip as ImageClip).colorGrade
+  for (const p of buildColorGradeFfmpegFilterParts(cgRaw)) {
+    parts.push(p)
   }
-  if (hw === 'auto' && platform === 'linux') {
-    return { c: isHevc ? 'libx265' : 'libx264', usePresetLibx: true, extra: [] }
+  const lutP = clip.type === 'video' ? (clip as VideoClip).lutPath : (clip as ImageClip).lutPath
+  const lutf = lut3dForPath(lutP)
+  if (lutf) parts.push(lutf)
+  const tin = clip.transitionIn
+  if (tin && tin.duration > 0 && tin.type !== 'none' && (tin.type === 'fade' || tin.type === 'dissolve')) {
+    parts.push(`fade=t=in:st=0:d=${tin.duration}`)
   }
-  return { c: isHevc ? 'libx265' : 'libx264', usePresetLibx: true, extra: [] }
-}
-
-const TELOP_POS: Record<string, string> = {
-  top_left: 'x=w*0.05:y=h*0.05',
-  top_center: 'x=(w-text_w)/2:y=h*0.05',
-  top_right: 'x=w*0.95-text_w:y=h*0.05',
-  middle_left: 'x=w*0.05:y=(h-text_h)/2',
-  middle_center: 'x=(w-text_w)/2:y=(h-text_h)/2',
-  middle_right: 'x=w*0.95-text_w:y=(h-text_h)/2',
-  bottom_left: 'x=w*0.05:y=h*0.88',
-  bottom_center: 'x=(w-text_w)/2:y=h*0.88',
-  bottom_right: 'x=w*0.90-text_w:y=h*0.88',
-  custom: 'x=(w-text_w)/2:y=h*0.88',
+  const tout = clip.transitionOut
+  if (tout && tout.duration > 0 && tout.type !== 'none' && (tout.type === 'fade' || tout.type === 'dissolve')) {
+    const fadeStart = clip.timelineDuration - tout.duration
+    parts.push(`fade=t=out:st=${Math.max(0, fadeStart)}:d=${tout.duration}`)
+  }
+  parts.push(`fps=${fpsVal}`)
+  return parts
 }
 
 export function exportVideo(
@@ -204,202 +355,370 @@ export function exportVideo(
   onProgress: (pct: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const { width, height, fps, bitrate } = settings.preset
-    const crossfade = settings.crossfadeAdjacent === true
-    const crossDur = Math.max(0.05, settings.crossfadeDurationSec ?? 0.35)
-    const loudness = settings.loudnessNormalize === true
-    const scale = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`
+    void (async () => {
+      let assTmp: string | null = null
+      const keepTmpAss = isPhaseAExportDebug()
+      try {
+        const { width, height, fps, bitrate } = settings.preset
+        /** 書き出し先と同ディレクトリ（ASS の一時ファイル・Phase A debug ログ用） */
+        const assHostDir = path.dirname(path.resolve(settings.outputPath))
+        const crossfade = settings.crossfadeAdjacent === true
+        const crossDur = Math.max(0.05, settings.crossfadeDurationSec ?? 0.35)
+        const audioPostMix: 'none' | 'loudnorm' | 'dynaudnorm' =
+          settings.audioPostMix ??
+          (settings.loudnessNormalize === true ? 'loudnorm' : 'none')
+        const scale = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`
 
-    const videoTrack = project.tracks.find((t) => t.type === 'video')
-    const telopTrack = project.tracks.find((t) => t.type === 'telop')
-    const audioTrack = project.tracks.find((t) => t.type === 'audio')
+        const videoClips = sortVisualClipsForExport(collectVisualClipEntries(project))
 
-    const videoClips = (videoTrack?.clips ?? [])
-      .filter((c): c is VisualClip => c.type === 'video' || c.type === 'image')
-      .sort((a, b) => a.timelineStart - b.timelineStart)
-
-    if (videoClips.length === 0) {
-      reject(new Error('書き出しできる映像クリップがありません。'))
-      return
-    }
-
-    let cmd = ffmpeg()
-    let inputIdx = 0
-    const clipInputs: { clip: VisualClip; idx: number; labelIndex: number }[] = []
-    for (const clip of videoClips) {
-      if (clip.type === 'image') {
-        cmd = cmd.input(clip.sourcePath).inputOptions(['-loop', '1', '-t', String(clip.timelineDuration)])
-      } else {
-        cmd = cmd.input(clip.sourcePath)
-      }
-      clipInputs.push({ clip, idx: inputIdx, labelIndex: clipInputs.length })
-      inputIdx++
-    }
-
-    const audioClips = (audioTrack?.clips ?? []).filter((c) => c.type === 'audio') as AudioClip[]
-    const audioInputStart = inputIdx
-    for (const ac of audioClips) {
-      cmd = cmd.input(ac.sourcePath)
-      inputIdx++
-    }
-
-    const filterParts: string[] = []
-    const n = clipInputs.length
-    const D = clipInputs.map(({ clip }) => segmentOutputDuration(clip))
-
-    clipInputs.forEach(({ clip, idx }, i) => {
-      const parts: string[] = []
-      if (clip.type === 'video') {
-        const vc = clip as VideoClip
-        if (vc.sourceStart !== undefined && vc.sourceEnd !== undefined) {
-          parts.push(`trim=start=${vc.sourceStart}:end=${vc.sourceEnd},setpts=PTS-STARTPTS`)
+        if (videoClips.length === 0) {
+          reject(new Error('書き出しできる映像クリップがありません。'))
+          return
         }
-        if (vc.speed && vc.speed !== 1) {
-          parts.push(`setpts=${(1 / vc.speed).toFixed(3)}*PTS`)
-        }
-      }
-      parts.push(scale)
-      const vf = clip.type === 'video' ? (clip as VideoClip).filter : (clip as ImageClip).filter
-      const pf = presetFilter(vf ?? 'none')
-      if (pf) parts.push(pf)
-      const cg = colorGradeToFilter(
-        clip.type === 'video'
-          ? (clip as VideoClip).colorGrade ?? ({} as ColorGrade)
-          : (clip as ImageClip).colorGrade ?? ({} as ColorGrade),
-      )
-      if (cg) parts.push(cg)
-      const lutP =
-        clip.type === 'video' ? (clip as VideoClip).lutPath : (clip as ImageClip).lutPath
-      const lutf = lut3dForPath(lutP)
-      if (lutf) parts.push(lutf)
-      if (clip.transitionIn?.type === 'fade' && clip.transitionIn.duration > 0) {
-        parts.push(`fade=t=in:st=0:d=${clip.transitionIn.duration}`)
-      }
-      if (clip.transitionOut?.type === 'fade' && clip.transitionOut.duration > 0) {
-        const fadeStart = clip.timelineDuration - clip.transitionOut.duration
-        parts.push(`fade=t=out:st=${Math.max(0, fadeStart)}:d=${clip.transitionOut.duration}`)
-      }
-      filterParts.push(`[${idx}:v]${parts.join(',')}[v${i}]`)
-    })
 
-    let videoOutLabel: string
-    if (n === 1) {
-      videoOutLabel = 'v0'
-    } else if (crossfade) {
-      let currentLabel = 'v0'
-      let currentLen = D[0]!
-      for (let i = 0; i < n - 1; i++) {
-        const d = Math.min(crossDur, currentLen * 0.5 - 0.01, D[i + 1]! * 0.5 - 0.01)
-        const dSafe = Math.max(0.05, d)
-        const outLab = i === n - 2 ? 'vx' : `xf${i}`
-        if (dSafe < 0.08 || dSafe > currentLen - 0.01) {
-          const cat = i === n - 2 ? 'vx' : `c${i}`
-          filterParts.push(`[${currentLabel}][v${i + 1}]concat=n=2:v=1:a=0[${cat}]`)
-          currentLabel = cat
-          currentLen = currentLen + D[i + 1]!
-        } else {
-          const off = (currentLen - dSafe).toFixed(4)
+        /** 出力の基準尺（映像・音声のトリム／パッドの共通値） */
+        const timelineEndSec = Math.max(computeTimelineEndSeconds(project), 0.1)
+
+        /** 重なり時は tpad+overlay のみ。隣接 xfade / concat のトランジションとは排他（xfade は未適用）。 */
+        const useOverlay = hasVisualClipTimelineOverlap(videoClips)
+
+        const clipInputs: { clip: VisualClip; idx: number; labelIndex: number }[] = []
+        let inputIdx = 0
+        for (const clip of videoClips) {
+          clipInputs.push({ clip, idx: inputIdx, labelIndex: clipInputs.length })
+          inputIdx++
+        }
+
+        const audioClips = collectAllAudioClips(project)
+        const audioInputStart = inputIdx
+
+        beginExportDiagnosticsRun({
+          timelineDurationSec: timelineEndSec,
+          format: settings.format,
+          outputPath: settings.outputPath,
+          includeAudio: settings.includeAudio,
+          crossfadeAdjacent: settings.crossfadeAdjacent,
+          crossfadeDurationSec: settings.crossfadeDurationSec,
+          audioPostMix,
+          videoEncoder: settings.videoEncoder,
+          presetWidth: width,
+          presetHeight: height,
+          presetFps: fps,
+          presetBitrate: bitrate,
+          presetCodec: settings.preset.codec,
+          useOverlay,
+          visualClipCount: videoClips.length,
+          audioClipCount: audioClips.length,
+        })
+
+        function buildInputCmd() {
+          let c = ffmpeg()
+          for (const clip of videoClips) {
+            if (clip.type === 'image') {
+              c = c.input(clip.sourcePath).inputOptions(['-loop', '1', '-t', String(clip.timelineDuration)])
+            } else {
+              c = c.input(clip.sourcePath)
+            }
+          }
+          for (const ac of audioClips) {
+            c = c.input(ac.sourcePath)
+          }
+          return c
+        }
+
+        const filterParts: string[] = []
+        const n = clipInputs.length
+        const D = clipInputs.map(({ clip }) => segmentOutputDuration(clip))
+
+        clipInputs.forEach(({ clip, idx }, i) => {
+          filterParts.push(`[${idx}:v]${buildClipVideoFilterParts(clip, scale, fps).join(',')}[v${i}]`)
+        })
+
+        let videoOutLabel: string
+        if (useOverlay) {
+          const fpsR = `${Number(fps)}/1`
           filterParts.push(
-            `[${currentLabel}][v${i + 1}]xfade=transition=fade:duration=${dSafe.toFixed(3)}:offset=${off}[${outLab}]`,
+            `color=c=black:s=${width}x${height}:r=${fpsR}:d=${timelineEndSec.toFixed(4)}[ovbase]`,
           )
-          currentLabel = outLab
-          currentLen = currentLen + D[i + 1]! - dSafe
+          let acc = 'ovbase'
+          for (let i = 0; i < n; i++) {
+            const clip = clipInputs[i]!.clip
+            const ts = clip.timelineStart
+            const te = clip.timelineStart + clip.timelineDuration
+            const stopPad = Math.max(0, timelineEndSec - te)
+            const outTag = i === n - 1 ? 'ovfinal' : `ovacc${i}`
+            filterParts.push(
+              `[v${i}]tpad=start_mode=add:start_duration=${ts.toFixed(4)}:stop_mode=add:stop_duration=${stopPad.toFixed(4)}:color=black[vpad${i}]`,
+            )
+            filterParts.push(`[${acc}][vpad${i}]overlay=0:0:format=auto:shortest=0[${outTag}]`)
+            acc = outTag
+          }
+          videoOutLabel = 'ovfinal'
+        } else if (n === 1) {
+          videoOutLabel = 'v0'
+        } else if (crossfade) {
+          let currentLabel = 'v0'
+          let currentLen = D[0]!
+          for (let i = 0; i < n - 1; i++) {
+            const d = Math.min(crossDur, currentLen * 0.5 - 0.01, D[i + 1]! * 0.5 - 0.01)
+            const dSafe = Math.max(0.05, d)
+            const outLab = i === n - 2 ? 'vx' : `xf${i}`
+            if (dSafe < 0.08 || dSafe > currentLen - 0.01) {
+              const cat = i === n - 2 ? 'vx' : `c${i}`
+              filterParts.push(`[${currentLabel}][v${i + 1}]concat=n=2:v=1:a=0[${cat}]`)
+              currentLabel = cat
+              currentLen = currentLen + D[i + 1]!
+            } else {
+              const off = (currentLen - dSafe).toFixed(4)
+              const prevClip = clipInputs[i]!.clip
+              const nextClip = clipInputs[i + 1]!.clip
+              const xfname = pickXfadeTransitionName(prevClip.transitionOut, nextClip.transitionIn)
+              filterParts.push(
+                `[${currentLabel}][v${i + 1}]xfade=transition=${xfname}:duration=${dSafe.toFixed(3)}:offset=${off}[${outLab}]`,
+              )
+              currentLabel = outLab
+              currentLen = currentLen + D[i + 1]! - dSafe
+            }
+          }
+          videoOutLabel = 'vx'
+        } else {
+          const concatIn = Array.from({ length: n }, (_, i) => `[v${i}]`).join('')
+          filterParts.push(`${concatIn}concat=n=${n}:v=1:a=0[concatv]`)
+          videoOutLabel = 'concatv'
         }
+
+        const telopClips = collectAllTelopClips(project)
+        /** ASS は出力 MP4 と同じディレクトリ（tmp 直下より libass が安定しやすいことがある） */
+        if (telopClips.length > 0) {
+          assTmp = path.join(assHostDir, `.vela-telop-${randomUUID()}.ass`)
+          const assText = buildTelopAssContent(telopClips, width, height)
+          await writeFile(assTmp, assText, 'utf8')
+          if (isPhaseAExportDebug()) {
+            console.error(
+              '[vela-phase-a-debug] ass path:',
+              assTmp,
+              keepTmpAss ? '(kept: VELA_PHASE_A_DEBUG=1 or VELA_EXPORT_DEBUG=1)' : '',
+            )
+            console.error(
+              '[vela-phase-a-debug] ass (first 50 lines):\n',
+              assText.split('\n').slice(0, 50).join('\n'),
+            )
+          }
+          filterParts.push(`[${videoOutLabel}]${buildAssBurnInFilter(assTmp)}[outv]`)
+        } else {
+          filterParts.push(`[${videoOutLabel}]format=yuv420p[outv]`)
+        }
+
+        const hasAudio = audioClips.length > 0 && settings.includeAudio
+        /** 音声グラフの最終ラベル（post なしのときは apad 直出し） */
+        let audioMapBracketed = '[outa]'
+        if (hasAudio) {
+          audioClips.forEach((ac, i) => {
+            const idx = audioInputStart + i
+            const gain = stemMixGainForAudioClip(project, ac)
+            const pan = effectivePanForAudioClip(project, ac)
+            const aTrim = `atrim=start=${ac.sourceStart}:end=${ac.sourceEnd},asetpts=PTS-STARTPTS`
+            /** FFmpeg 6 の stereotools は `balance` ではなく `balance_out`（-1〜1） */
+            const panF =
+              Math.abs(pan) < 0.001
+                ? ''
+                : `,aformat=channel_layouts=stereo,stereotools=balance_out=${pan.toFixed(4)}`
+            const vChain = `volume=${gain}${panF}`
+            const audDur = Math.max(1e-4, (ac.sourceEnd ?? 0) - (ac.sourceStart ?? 0))
+            const fadeSfx = audioFadeAffixes(ac, audDur)
+            const delayMs = Math.round(ac.timelineStart * 1000)
+            filterParts.push(
+              `[${idx}:a]${aTrim},${vChain}${fadeSfx},adelay=${delayMs}|${delayMs}[a${i}]`,
+            )
+          })
+          const nAudio = audioClips.length
+          const amixIns = audioClips.map((_, i) => `[a${i}]`).join('')
+          const tEnd = timelineEndSec.toFixed(4)
+          filterParts.push(`${amixIns}amix=inputs=${nAudio}:normalize=0:duration=longest[atmix]`)
+          const masterGn = audioMasterVolumeNormalized(project)
+          const trimInLabel = Math.abs(masterGn - 1) > 1e-6 ? 'atmstv' : 'atmix'
+          if (trimInLabel === 'atmstv') {
+            filterParts.push(`[atmix]volume=${masterGn.toFixed(6)}[atmstv]`)
+          }
+          filterParts.push(
+            `[${trimInLabel}]atrim=0:${tEnd},asetpts=PTS-STARTPTS,apad=whole_dur=${tEnd}[atpad]`,
+          )
+          if (audioPostMix === 'none') {
+            audioMapBracketed = '[atpad]'
+          } else if (audioPostMix === 'loudnorm') {
+            filterParts.push(
+              `[atpad]loudnorm=I=-16:TP=-1.5:LRA=11:print_format=summary[outa]`,
+            )
+          } else {
+            filterParts.push(`[atpad]dynaudnorm[outa]`)
+          }
+        }
+
+        const filterComplexStr = filterParts.join(';')
+        const ffBin = resolveFfmpegBinary()
+        let ffmpegVersionHeadMemo: string | undefined
+        const ensureFfmpegVersionHead = (): string | undefined => {
+          if (ffmpegVersionHeadMemo !== undefined) return ffmpegVersionHeadMemo || undefined
+          try {
+            ffmpegVersionHeadMemo = execFileSync(ffBin, ['-hide_banner', '-version'], {
+              encoding: 'utf8',
+              maxBuffer: 256 * 1024,
+            })
+              .split('\n')
+              .slice(0, 8)
+              .join('\n')
+          } catch {
+            ffmpegVersionHeadMemo = ''
+          }
+          return ffmpegVersionHeadMemo || undefined
+        }
+
+        const diagBase: Partial<ExportDiagnostics> = {
+          ffmpegPath: ffBin,
+          platform: process.platform,
+          presetId: settings.format,
+          presetCodec: settings.preset.codec,
+          resolvedPresetSummary: `${width}x${height}@${fps} ${bitrate}`,
+          requestedVideoEncoder: String(settings.videoEncoder ?? 'auto'),
+          outputPath: settings.outputPath,
+          timelineDurationSec: timelineEndSec,
+        }
+
+        const platNorm = normalizeExportPlatform(process.platform)
+        const firstEnc = resolveExportVideoEncoder(settings.preset.codec, settings.videoEncoder, platNorm)
+        const mayHwFallback =
+          !firstEnc.usePresetLibx && (settings.videoEncoder ?? 'auto') !== 'off'
+
+        const runAttempt = (hwOverride: HwVideoEncoder | undefined, attemptPhase: 'primary' | 'software_retry') =>
+          new Promise<void>((res, rej) => {
+            const eff = hwOverride !== undefined ? hwOverride : settings.videoEncoder
+            const { vcodec, usePresetLibx, extraAfterBitrate } = resolveExportVideoEncoder(
+              settings.preset.codec,
+              eff,
+              platNorm,
+            )
+            const cmd = buildInputCmd()
+            const outputOptions: string[] = [
+              '-map',
+              '[outv]',
+              ...(hasAudio ? (['-map', audioMapBracketed] as const) : []),
+              '-c:v',
+              vcodec,
+            ]
+            if (usePresetLibx) {
+              outputOptions.push('-b:v', bitrate, '-preset', 'medium')
+            } else {
+              outputOptions.push('-b:v', bitrate, ...extraAfterBitrate)
+            }
+            if (!usePresetLibx && vcodec.includes('videotoolbox')) {
+              outputOptions.push('-allow_sw', '1')
+            }
+            outputOptions.push('-r', String(fps), '-pix_fmt', 'yuv420p')
+            if (hasAudio) {
+              outputOptions.push('-c:a', 'aac', '-b:a', '192k')
+            } else {
+              outputOptions.push('-an')
+            }
+            outputOptions.push('-movflags', '+faststart')
+            outputOptions.push('-t', timelineEndSec.toFixed(4))
+
+            cmd.complexFilter(filterParts).outputOptions(outputOptions).output(settings.outputPath)
+
+            if (isPhaseAExportDebug()) {
+              console.error('[vela-phase-a-debug] ffmpeg binary:', ffBin)
+              console.error('[vela-phase-a-debug] projectId:', process.env.VELA_PHASE_A_DEBUG_PROJECT_ID ?? '(unset)')
+              console.error('[vela-phase-a-debug] filter_complex:', filterComplexStr)
+              console.error('[vela-phase-a-debug] tmp / ass host dir:', assHostDir)
+              try {
+                const verHead = execFileSync(ffBin, ['-hide_banner', '-version'], {
+                  encoding: 'utf8',
+                  maxBuffer: 256 * 1024,
+                })
+                  .split('\n')
+                  .slice(0, 10)
+                  .join('\n')
+                console.error('[vela-phase-a-debug] ffmpeg -version (head):\n', verHead)
+              } catch (ev) {
+                console.error('[vela-phase-a-debug] ffmpeg -version failed:', ev)
+              }
+              try {
+                const argv = (cmd as unknown as { _getArguments: () => string[] })._getArguments()
+                console.error('[vela-phase-a-debug] argv JSON (replay):', JSON.stringify([ffBin, ...argv]))
+              } catch (ea) {
+                console.error('[vela-phase-a-debug] _getArguments failed:', ea)
+              }
+            }
+
+            cmd
+              .on('start', (cmdline) => {
+                if (isPhaseAExportDebug()) console.error('[vela-phase-a-debug] fluent start:', cmdline)
+              })
+              .on('progress', (p) => {
+                if (p.percent != null) onProgress(Math.min(100, p.percent))
+              })
+              .on('end', () => {
+                res()
+              })
+              .on('error', (err: unknown) => {
+                logExportFailureDiagnostics(err, {
+                  attemptPhase,
+                  vcodec,
+                  primaryVcodec: attemptPhase === 'software_retry' ? firstEnc.vcodec : undefined,
+                  diagBase: { ...diagBase, ffmpegVersionHead: ensureFfmpegVersionHead() },
+                  filterComplexStr,
+                  cmd,
+                })
+                rej(err)
+              })
+              .run()
+          })
+
+        try {
+          await runAttempt(undefined, 'primary')
+        } catch (e1) {
+          const code1 =
+            parseFfmpegExitCode(extractExportErrorMessage(e1)) ??
+            parseFfmpegExitCode(extractFfmpegStderr(e1) ?? '') ??
+            undefined
+          if (!mayHwFallback) {
+            reject(
+              new Error(
+                formatExportErrorSummary({ exitCode: code1 ?? undefined, retriedWithSoftware: false }),
+              ),
+            )
+            return
+          }
+          console.error(
+            '[vela-export] hardware encode failed; retrying with software libx264/libx265:',
+            extractExportErrorMessage(e1),
+          )
+          onProgress(0)
+          try {
+            await runAttempt('off', 'software_retry')
+            console.error('[vela-export] Software encode retry succeeded after hardware failure.')
+          } catch (e2) {
+            const code2 =
+              parseFfmpegExitCode(extractExportErrorMessage(e2)) ??
+              parseFfmpegExitCode(extractFfmpegStderr(e2) ?? '') ??
+              undefined
+            reject(
+              new Error(
+                formatExportErrorSummary({
+                  exitCode: code2 ?? undefined,
+                  retriedWithSoftware: true,
+                }),
+              ),
+            )
+            return
+          }
+        }
+        clearExportDiagnosticsRun()
+        resolve()
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error(String(e)))
+      } finally {
+        if (assTmp && !keepTmpAss) await rm(assTmp, { force: true }).catch(() => {})
       }
-      videoOutLabel = 'vx'
-    } else {
-      const concatIn = Array.from({ length: n }, (_, i) => `[v${i}]`).join('')
-      filterParts.push(`${concatIn}concat=n=${n}:v=1:a=0[concatv]`)
-      videoOutLabel = 'concatv'
-    }
-
-    const telopClips = (telopTrack?.clips ?? []).filter((c) => c.type === 'telop') as TelopClip[]
-    if (telopClips.length > 0) {
-      const drawtexts = telopClips.map((tc) => {
-        const pos = `${TELOP_POS[tc.position] ?? TELOP_POS.bottom_center!}`
-        const color = tc.style.color.replace('#', '')
-        const lines = tc.text.split('\n').filter(Boolean)
-        const t0 = lines[0] ?? ''
-        const rest = `borderw=${Math.min(8, tc.style.strokeWidth || 0)}:fontcolor=0x${color}:line_spacing=8`
-        return `drawtext=text='${escapeDrawtext(t0)}':fontsize=${tc.style.fontSize}:${pos}:${rest}:enable='between(t,${tc.timelineStart},${tc.timelineStart + tc.timelineDuration})'`
-      })
-      filterParts.push(
-        `[${videoOutLabel}]${drawtexts.join(',')},format=yuv420p[outv]`,
-      )
-    } else {
-      filterParts.push(`[${videoOutLabel}]format=yuv420p[outv]`)
-    }
-
-    const hasAudio = audioClips.length > 0 && settings.includeAudio
-    if (hasAudio) {
-      audioClips.forEach((ac, i) => {
-        const idx = audioInputStart + i
-        const muted = trackMutedForAudioClip(project, ac)
-        const baseVol = muted ? 0 : ac.volume ?? 1
-        const aTrim = `atrim=start=${ac.sourceStart}:end=${ac.sourceEnd},asetpts=PTS-STARTPTS`
-        const vChain = `volume=${baseVol}`
-        const audDur = Math.max(0.01, (ac.sourceEnd ?? 0) - (ac.sourceStart ?? 0))
-        const fi = ac.fadeIn > 0 ? `,afade=t=in:st=0:d=${Math.min(ac.fadeIn, audDur * 0.5)}` : ''
-        const fo =
-          ac.fadeOut > 0
-            ? `,afade=t=out:st=${Math.max(0, audDur - ac.fadeOut)}:d=${Math.min(ac.fadeOut, audDur * 0.5)}`
-            : ''
-        const delayMs = Math.round(ac.timelineStart * 1000)
-        filterParts.push(
-          `[${idx}:a]${aTrim},${vChain}${fi}${fo},adelay=${delayMs}|${delayMs}[a${i}]`,
-        )
-      })
-      const nAudio = audioClips.length
-      const amixIns = audioClips.map((_, i) => `[a${i}]`).join('')
-      if (loudness) {
-        filterParts.push(
-          `${amixIns}amix=inputs=${nAudio}:normalize=0:duration=first[atmp]`,
-        )
-        filterParts.push(
-          `[atmp]loudnorm=I=-16:TP=-1.5:LRA=11:print_format=summary[outa]`,
-        )
-      } else {
-        filterParts.push(
-          `${amixIns}amix=inputs=${nAudio}:normalize=0:duration=first[outa]`,
-        )
-      }
-    }
-
-    const { c: vcodec, usePresetLibx, extra: vExtra } = resolveVcodec(
-      settings.preset.codec,
-      settings.videoEncoder,
-    )
-
-    const outputOptions: string[] = [
-      ...(hasAudio ? (['-map', '[outv]', '-map', '[outa]'] as const) : (['-map', '[outv]'] as const)),
-      '-c:v',
-      vcodec,
-    ]
-    if (usePresetLibx) {
-      outputOptions.push('-b:v', bitrate, '-preset', 'medium')
-    } else {
-      outputOptions.push('-b:v', bitrate, ...vExtra)
-    }
-    if (!usePresetLibx && vcodec.includes('videotoolbox')) {
-      outputOptions.push('-allow_sw', '1')
-    }
-    outputOptions.push('-r', String(fps), '-pix_fmt', 'yuv420p')
-    if (hasAudio) {
-      outputOptions.push('-c:a', 'aac', '-b:a', '192k')
-    } else {
-      outputOptions.push('-an')
-    }
-    outputOptions.push('-movflags', '+faststart')
-
-    cmd
-      .complexFilter(filterParts)
-      .outputOptions(outputOptions)
-      .output(settings.outputPath)
-      .on('progress', (p) => {
-        if (p.percent != null) onProgress(Math.min(100, p.percent))
-      })
-      .on('end', () => resolve())
-      .on('error', reject)
-      .run()
+    })()
   })
 }

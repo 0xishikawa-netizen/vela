@@ -1,0 +1,86 @@
+{
+  "id": "phase-b-master-volume",
+  "name": "Phase B — Master volume 0.5 (timeline length unchanged)",
+  "createdAt": "2026-05-06T00:00:00.000Z",
+  "updatedAt": "2026-05-06T00:00:00.000Z",
+  "duration": 10,
+  "fps": 30,
+  "aspectRatio": "16:9",
+  "resolution": { "width": 640, "height": 360 },
+  "audioMasterVolume": 0.5,
+  "tracks": [
+    {
+      "id": "tr-v1",
+      "type": "video",
+      "name": "映像 1",
+      "muted": false,
+      "locked": false,
+      "volume": 1,
+      "solo": false,
+      "pan": 0,
+      "clips": [
+        {
+          "id": "cv1",
+          "type": "video",
+          "sourcePath": "<REPO_ROOT>/fixtures/export/phase-a/media/video-a.mp4",
+          "timelineStart": 0,
+          "timelineDuration": 10,
+          "sourceStart": 0,
+          "sourceEnd": 10,
+          "volume": 1,
+          "speed": 1,
+          "filter": "none",
+          "colorGrade": {
+            "brightness": 0,
+            "contrast": 0,
+            "saturation": 0,
+            "hue": 0,
+            "temperature": 0,
+            "highlights": 0,
+            "shadows": 0,
+            "sharpness": 0
+          },
+          "transitionIn": { "type": "none", "duration": 0 },
+          "transitionOut": { "type": "none", "duration": 0 }
+        }
+      ]
+    },
+    {
+      "id": "tr-t1",
+      "type": "telop",
+      "name": "テロップ 1",
+      "muted": false,
+      "locked": false,
+      "volume": 1,
+      "solo": false,
+      "pan": 0,
+      "clips": []
+    },
+    {
+      "id": "tr-a1",
+      "type": "audio",
+      "name": "BGM 1",
+      "muted": false,
+      "locked": false,
+      "volume": 1,
+      "solo": false,
+      "pan": 0,
+      "clips": [
+        {
+          "id": "cb_mast",
+          "type": "audio",
+          "sourcePath": "<REPO_ROOT>/fixtures/export/phase-a/media/audio-5s.wav",
+          "timelineStart": 0,
+          "timelineDuration": 2,
+          "sourceStart": 0,
+          "sourceEnd": 2,
+          "volume": 1,
+          "fadeIn": 0,
+          "fadeOut": 0,
+          "transitionIn": { "type": "none", "duration": 0 },
+          "transitionOut": { "type": "none", "duration": 0 }
+        }
+      ]
+    }
+  ]
+}

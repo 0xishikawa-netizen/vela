@@ -1,4 +1,5 @@
 import { secondsToDisplay } from '../../lib/timeUtils'
+import { computeTimelineEndSeconds } from '../../lib/projectSanitize'
 import { useEditorStore } from '../../store/editorStore'
 import { useProjectStore } from '../../store/projectStore'
 
@@ -7,7 +8,7 @@ export default function Transport() {
   const isPlaying = useEditorStore((s) => s.isPlaying)
   const setPlaying = useEditorStore((s) => s.setPlaying)
   const setCurrentTime = useEditorStore((s) => s.setCurrentTime)
-  const duration = useProjectStore((s) => s.current?.duration ?? 0)
+  const duration = useProjectStore((s) => computeTimelineEndSeconds(s.current))
   const fps = useProjectStore((s) => s.current?.fps ?? 30)
 
   const skipFrames = (frames: number) => {

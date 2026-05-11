@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useState } from 'react'
 import TitleBar from '../components/layout/TitleBar'
 import Toolbar from '../components/layout/Toolbar'
 import Preview from '../components/editor/Preview'
@@ -11,6 +11,7 @@ import EffectsPanel from '../components/editor/EffectsPanel'
 import AudioPanel from '../components/editor/AudioPanel'
 import ExportModal from '../components/editor/ExportModal'
 import AutoCaptionPanel from '../components/ai/AutoCaptionPanel'
+import SubtitleFilePanel from '../components/editor/SubtitleFilePanel'
 import { useEditorStore } from '../store/editorStore'
 import { usePlayback } from '../hooks/usePlayback'
 import { useKeyboardShortcuts } from '../hooks/useKeyboard'
@@ -18,6 +19,7 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboard'
 const PANEL_TABS = [
   { id: 'properties' as const, icon: '⊟', label: 'クリップ' },
   { id: 'text' as const, icon: 'T', label: 'テロップ' },
+  { id: 'subtitles' as const, icon: '≡', label: '字幕' },
   { id: 'effects' as const, icon: '✦', label: 'ルック' },
   { id: 'audio' as const, icon: '♪', label: '音声' },
   { id: 'ai' as const, icon: '◈', label: 'AI字幕' },
@@ -107,6 +109,7 @@ export default function Editor() {
           <div className="flex-1 overflow-y-auto min-w-0">
             {activePanel === 'properties' && <PropertiesPanel />}
             {activePanel === 'text' && <TextPanel />}
+            {activePanel === 'subtitles' && <SubtitleFilePanel />}
             {activePanel === 'effects' && <EffectsPanel />}
             {activePanel === 'audio' && <AudioPanel />}
             {activePanel === 'ai' && <AutoCaptionPanel />}

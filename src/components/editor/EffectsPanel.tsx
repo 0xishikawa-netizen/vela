@@ -1,6 +1,6 @@
 import { useProjectStore } from '../../store/projectStore'
 import { useEditorStore } from '../../store/editorStore'
-import type { VideoClip, ImageClip, VideoFilter, ColorGrade } from '../../lib/types'
+import type { VideoClip, ImageClip, VideoFilter, ColorGrade, TransitionType } from '../../lib/types'
 import { DEFAULT_COLOR_GRADE } from '../../lib/types'
 
 const PRESET_FILTERS: { value: VideoFilter; label: string }[] = [
@@ -16,9 +16,18 @@ const PRESET_FILTERS: { value: VideoFilter; label: string }[] = [
   { value: 'fade', label: '淡い' },
 ]
 
-const TRANS_IN = [
-  { type: 'none' as const, label: 'なし' },
-  { type: 'fade' as const, label: 'フェード' },
+/** クリップ先端の fade フィルタ＋隣接クリップ間 xfade で利用可能な種類 */
+const VIDEO_XFADE_TRANSITIONS: { type: TransitionType; label: string }[] = [
+  { type: 'none', label: 'なし' },
+  { type: 'fade', label: 'フェード' },
+  { type: 'dissolve', label: 'ディゾルブ（xfade）' },
+  { type: 'wipe', label: 'ワイプ（xfade）' },
+  { type: 'slide_left', label: 'スライド左（xfade）' },
+  { type: 'slide_right', label: 'スライド右（xfade）' },
+  { type: 'slide_up', label: 'スライド上（xfade）' },
+  { type: 'slide_down', label: 'スライド下（xfade）' },
+  { type: 'zoom_in', label: '円形オープン（xfade）' },
+  { type: 'zoom_out', label: '円形クローズ（xfade）' },
 ]
 
 function PanelRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -136,6 +145,9 @@ export default function EffectsPanel() {
       <p className="text-[11px] font-semibold tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
         ルック
       </p>
+      <p className="text-[10px] leading-relaxed" style={{ color: 'var(--muted-2)' }}>
+        プレビューはルックとカラーグレードを CSS で近似します（export と完全一致ではありません）。LUT は WebGL レイヤーで別扱いです。
+      </p>
 
       <PanelRow label="ルックプリセット">
         <select
@@ -187,8 +199,17 @@ export default function EffectsPanel() {
       </div>
 
       <p className="text-[10px] leading-relaxed" style={{ color: 'var(--muted-2)' }}>
-        明るさ・コントラスト・彩度は書き出し時に FFmpeg の <code className="mono">eq</code> として使われます。
+        書き出しは <code className="mono">eq</code> → <code className="mono">hue</code> → <code className="mono">colorbalance</code>（ルックプリセットの次）。
       </p>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          className="btn-ghost px-2 py-1 text-[11px]"
+          onClick={() => setGrade({ ...DEFAULT_COLOR_GRADE })}
+        >
+          カラーグレードを既定に戻す
+        </button>
+      </div>
       <SliderRow
         label="明るさ"
         min={-100}
@@ -216,33 +237,54 @@ export default function EffectsPanel() {
         display={`${g.saturation}`}
         onChange={(v) => setGrade({ saturation: v })}
       />
+      <SliderRow
+        label="色相"
+        min={-180}
+        max={180}
+        step={1}
+        value={g.hue}
+        display={`${g.hue}°`}
+        onChange={(v) => setGrade({ hue: v })}
+      />
+      <SliderRow
+        label="色温度"
+        min={-100}
+        max={100}
+        step={1}
+        value={g.temperature}
+        display={`${g.temperature}`}
+        onChange={(v) => setGrade({ temperature: v })}
+      />
 
       <div
         className="rounded-lg px-2 py-2 text-[10px] leading-relaxed"
         style={{ background: 'var(--surface-2)', color: 'var(--muted)' }}
       >
-        トランジション（IN / OUT）はフェードが書き出し対応です。隣接クリップ間のクロスフェードは「書き出し」で有効化できます。
+        フェードはクリップ単体の先端にも適用されます。その他の種類は「書き出し」で隣接クリップ間の xfade を有効にしたとき、境界の見た目として使われます（前クリップの OUT を優先、なければ次の IN）。
       </div>
 
       <PanelRow label="トランジション IN">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <select
             className="ui-select min-w-0 flex-1 basis-[8rem]"
-            value={clip.transitionIn.type === 'fade' ? 'fade' : 'none'}
+            value={clip.transitionIn.type}
             onChange={(e) => {
-              const t = e.target.value as 'none' | 'fade'
+              const t = e.target.value as TransitionType
               updateClip(selectedTrackId, selectedClipId, {
-                transitionIn: { type: t, duration: t === 'fade' ? Math.max(0.1, clip.transitionIn.duration || 0.3) : 0 },
+                transitionIn: {
+                  type: t,
+                  duration: t === 'none' ? 0 : Math.max(0.1, clip.transitionIn.duration || 0.35),
+                },
               })
             }}
           >
-            {TRANS_IN.map((o) => (
+            {VIDEO_XFADE_TRANSITIONS.map((o) => (
               <option key={o.type} value={o.type}>
                 {o.label}
               </option>
             ))}
           </select>
-          {clip.transitionIn.type === 'fade' && (
+          {clip.transitionIn.type !== 'none' && (
             <input
               type="number"
               className="ui-select w-20 shrink-0"
@@ -252,7 +294,7 @@ export default function EffectsPanel() {
               value={clip.transitionIn.duration}
               onChange={(e) =>
                 updateClip(selectedTrackId, selectedClipId, {
-                  transitionIn: { type: 'fade', duration: Number(e.target.value) },
+                  transitionIn: { type: clip.transitionIn.type, duration: Number(e.target.value) },
                 })
               }
             />
@@ -264,21 +306,24 @@ export default function EffectsPanel() {
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <select
             className="ui-select min-w-0 flex-1 basis-[8rem]"
-            value={clip.transitionOut.type === 'fade' ? 'fade' : 'none'}
+            value={clip.transitionOut.type}
             onChange={(e) => {
-              const t = e.target.value as 'none' | 'fade'
+              const t = e.target.value as TransitionType
               updateClip(selectedTrackId, selectedClipId, {
-                transitionOut: { type: t, duration: t === 'fade' ? Math.max(0.1, clip.transitionOut.duration || 0.3) : 0 },
+                transitionOut: {
+                  type: t,
+                  duration: t === 'none' ? 0 : Math.max(0.1, clip.transitionOut.duration || 0.35),
+                },
               })
             }}
           >
-            {TRANS_IN.map((o) => (
+            {VIDEO_XFADE_TRANSITIONS.map((o) => (
               <option key={`o-${o.type}`} value={o.type}>
                 {o.label}
               </option>
             ))}
           </select>
-          {clip.transitionOut.type === 'fade' && (
+          {clip.transitionOut.type !== 'none' && (
             <input
               type="number"
               className="ui-select w-20 shrink-0"
@@ -288,7 +333,7 @@ export default function EffectsPanel() {
               value={clip.transitionOut.duration}
               onChange={(e) =>
                 updateClip(selectedTrackId, selectedClipId, {
-                  transitionOut: { type: 'fade', duration: Number(e.target.value) },
+                  transitionOut: { type: clip.transitionOut.type, duration: Number(e.target.value) },
                 })
               }
             />

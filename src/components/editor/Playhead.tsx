@@ -1,13 +1,12 @@
 type Props = {
   currentTime: number
   zoom: number
-  scrollLeft: number
   height: number
   onSeek: (seconds: number) => void
 }
 
-export default function Playhead({ currentTime, zoom, scrollLeft, height, onSeek }: Props) {
-  const x = currentTime * zoom - scrollLeft
+export default function Playhead({ currentTime, zoom, height, onSeek }: Props) {
+  const x = currentTime * zoom
 
   return (
     <div
