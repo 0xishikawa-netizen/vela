@@ -29,6 +29,8 @@ export interface TranscriptionEngineResult {
   rawOutputKind?: 'json' | 'srt' | 'vtt'
   /** リクエスト不正・エンジン失敗時 */
   errorMessage?: string
+  /** Whisper local 失敗時: GUIログビューア用 stderr 末尾 */
+  stderrTail?: string
   /** ユーザー取消で resolve した場合 */
   canceled?: boolean
 }
@@ -193,6 +195,9 @@ export function runWhisperLocalTranscriptionEngine(
 
   const finished = (async (): Promise<TranscriptionEngineResult> => {
     try {
+      if (!api.startWhisperLocalTranscription) {
+        return { segments: [], errorMessage: WHISPER_LOCAL_USER_MESSAGE_NOT_WIRED }
+      }
       const raw = (await api.startWhisperLocalTranscription({
         runId,
         binaryPath: cfg.binaryPath!.trim(),

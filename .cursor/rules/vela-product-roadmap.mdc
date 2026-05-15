@@ -29,7 +29,7 @@ Phase C-3 — 色相 / 色温度
 部分実装（共通）
 
 - プレビューとエクスポートは見た目の近似に留まり、色カーブや LUT 補間、色相・色温度の厳密一致ではない。
-- カラーホイールに相当する UI やハイライト/シャドウ/シャープネスのコントロールは未実装。
+- ハイライト/シャドウ/シャープネスのスライダーを EffectsPanel に追加（C-3 追加実装）。FFmpeg は curves/unsharp、CSS は brightness/contrast 近似。カラーホイールは未実装。
 
 残り課題
 
@@ -90,15 +90,17 @@ D-5 — 配布前 export smoke / プラットフォームチェックリスト
 - 目的: macOS / Windows / Linux の各 OS で配布前に書き出しを軽くテストする手順を文書化し、CI でドキュメントの基本構造を検証する。
 - 内容: docs/export-platform-smoke.md に実行手順、失敗時ログ取得、プリセットやフォールバック確認の項目を記述。fixtures/export/README.md に CI と実機テストの索引を整理。npm run check:export-platform-smoke-doc で必須見出しを検証し、実機の GPU エンコードは CI 外で確認する。
 
+Phase D 追加実装
+
+- **D-6 — VFR 対応**: 書き出し outputOptions に `-fps_mode cfr` を追加。VFR 入力ソースを含む場合でも CFR 出力を強制し、プレーヤー互換性を確保（ffmpeg 5+ / 旧バージョン共通フラグ）。
+
 Phase D 継続の残課題
 
-1. 可変フレームレート（VFR）への対応方針（UI、-fps_mode/-vsync、プレビューとの整合）。
-2. SNS プラットフォーム別に細分化したプリセットの追加や推奨ビットレートの調整。
-3. 各 OS・ブラウザ等へのアップロード互換性を実機で検証し、結果を記録。
-4. 長尺・シーン別でのファイルサイズやビットレートの実測。
-5. 代表的な stderr や診断ログのサンプル蓄積。
-6. クラッシュレポートとの連携機構。
-7. GUI 内でのログビューア追加。
+1. SNS プラットフォーム別に細分化したプリセットの追加や推奨ビットレートの調整。
+2. 各 OS・ブラウザ等へのアップロード互換性を実機で検証し、結果を記録。
+3. 長尺・シーン別でのファイルサイズやビットレートの実測。
+4. 代表的な stderr や診断ログのサンプル蓄積。
+5. クラッシュレポートとの連携機構。
 
 Phase E — AI 字幕・テキスト
 
@@ -172,17 +174,23 @@ E-11 — Electron / IPC Whisper local スモーク
 - whisperLocal:progress のログや json 読取、セグメント数の確認を行い、UI からも字幕トラックへ追加・保存できるか検証。
 - 文言の調整や未接続誤解の解消も含む。
 
+Phase E 実装済み（追加）
+
+- **E-12 — GPU preferGpu argv 実装**: `buildWhisperLocalArgs` に `--gpu auto` (true) / `-ng` (false) を追加。`WhisperLocalStartPayload.preferGpu` が argv に反映される。
+- **E-13 — progress parse 精度向上**: `parseWhisperProgressFromStderrLine` で `progress = XX %` / `[XX%]` 等を抽出。`whisperLocalProgressFromStderr` が stderr バッファを走査し、一致しない場合はチャンク数フォールバック。
+- **E-14 — 長尺音声チャンク化**: 600 秒超のメディアは FFmpeg で 300 秒ごとに WAV 分割→各チャンクへ Whisper spawn→セグメントの時刻オフセットを加算してマージ。`spawnWhisperOnFile` で spawn 処理を共通化。
+- **E-15 — GUIログビューア**: 失敗ジョブに `stderrTail`（最大 2KB）を保存。TranscriptionMockSection のジョブ行で `<details>` ログ展開 UI を追加。
+- **E-16 — 波形上の字幕ドラッグ UI**: `SubtitleTimelineTrack` コンポーネントを新設。Timeline に字幕トラック行（ラベル + バー）を追加し、ポインタドラッグで startSec / endSec を直接編集可能。
+
 Phase E 継続の残課題
 
-1. Whisper の progress parse 精度向上（whisperLocal:progress）。
-2. 長尺音声のチャンク化および結合処理。
-3. モデルマネージャとダウンロード導線の整備。
-4. GPU argv (preferGpu) の実装と検証。
-5. バンドルされた binary の配布方針策定。
-6. その他 OS での Whisper CLI 実測。
-7. 波形上での字幕ドラッグなど UI 強化。
-8. 複数トラック編集の効率化やキーボード操作への対応。
-9. テロップとのマッピングや一括生成のさらなる洗練。
+1. モデルマネージャとダウンロード導線の整備（ファイル参照のみ）。
+2. バンドルされた binary の配布方針策定。
+3. その他 OS での Whisper CLI 実測。
+4. 複数トラック編集の効率化やキーボード操作への対応。
+5. テロップとのマッピングや一括生成のさらなる洗練。
+6. GPU preferGpu 実機検証（whisper.cpp ビルドによってフラグ名が異なる場合の吸収）。
+7. 長尺チャンク化のチャンク境界スムージング（セグメントが重複・欠落しないか実測）。
 
 Whisper 実装候補の整理
 

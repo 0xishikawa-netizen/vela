@@ -9,7 +9,9 @@ import { DEFAULT_COLOR_GRADE } from './types'
  * - **Preview（本モジュール）**: CSS `filter` による **軽量近似**（preset / colorGrade）。**LUT は CSS では再現しない**（Phase C-2: WebGL は `previewLut.ts`）。
  * - **hue**: `hue-rotate`（export の `hue=h=ラジアン` と方向は揃えるが厳密一致ではない）。
  * - **temperature**: CSS だけでは物理色温度の再現に限界がある。**暖色**は sepia / saturate / brightness の軽い合成、**寒色**は hue-rotate + saturate + brightness の粗い近似（export の `colorbalance` とはずれうる）。
- * - highlights / shadows / sharpness は未配線のまま。
+ * - highlights: brightness + contrast の複合で近似（CSS では明部だけ選択的に変えられないため近似値）。
+ * - shadows: brightness/contrast の逆方向複合で近似。
+ * - sharpness: CSS `filter` に直接の sharpen はないため contrast の微増で疑似的に近似（輸出の `unsharp` とは非一致）。
  */
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -63,6 +65,28 @@ export function buildCssFilterFromColorGrade(g: Partial<ColorGrade> | undefined)
 
   const tempCss = buildCssTemperatureApprox(grade.temperature)
   if (tempCss) parts.push(tempCss)
+
+  // highlights: 明部を brightness + 軽い contrast で粗く近似（CSS では部分選択不可）
+  if (Math.abs(grade.highlights) > GRADE_EPS) {
+    const h = clamp(grade.highlights, -100, 100) / 100
+    const bri = clamp(100 + h * 12, 70, 140)
+    const con = clamp(100 + h * 6, 80, 120)
+    parts.push(`brightness(${bri}%) contrast(${con}%)`)
+  }
+
+  // shadows: 暗部を brightness の逆方向で粗く近似
+  if (Math.abs(grade.shadows) > GRADE_EPS) {
+    const s = clamp(grade.shadows, -100, 100) / 100
+    const bri = clamp(100 + s * 10, 70, 130)
+    parts.push(`brightness(${bri}%)`)
+  }
+
+  // sharpness: CSS に unsharp がないため contrast 微増で疑似近似（輸出とは非一致）
+  if (Math.abs(grade.sharpness) > GRADE_EPS) {
+    const sh = clamp(grade.sharpness, -100, 100) / 100
+    const con = clamp(100 + sh * 8, 80, 130)
+    parts.push(`contrast(${con}%)`)
+  }
 
   return parts.join(' ')
 }

@@ -132,6 +132,7 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
             status: 'failed',
             progress: 0,
             errorMessage: result.errorMessage,
+            stderrTail: result.stderrTail,
             resultSegments: undefined,
             resultRawOutputKind: undefined,
           }),

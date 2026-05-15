@@ -199,7 +199,7 @@ export default function EffectsPanel() {
       </div>
 
       <p className="text-[10px] leading-relaxed" style={{ color: 'var(--muted-2)' }}>
-        書き出しは <code className="mono">eq</code> → <code className="mono">hue</code> → <code className="mono">colorbalance</code>（ルックプリセットの次）。
+        書き出しは <code className="mono">eq</code> → <code className="mono">hue</code> → <code className="mono">colorbalance</code> → <code className="mono">curves</code> → <code className="mono">unsharp</code>（ルックプリセットの次）。
       </p>
       <div className="flex justify-end">
         <button
@@ -254,6 +254,33 @@ export default function EffectsPanel() {
         value={g.temperature}
         display={`${g.temperature}`}
         onChange={(v) => setGrade({ temperature: v })}
+      />
+      <SliderRow
+        label="ハイライト"
+        min={-100}
+        max={100}
+        step={1}
+        value={g.highlights}
+        display={`${g.highlights}`}
+        onChange={(v) => setGrade({ highlights: v })}
+      />
+      <SliderRow
+        label="シャドウ"
+        min={-100}
+        max={100}
+        step={1}
+        value={g.shadows}
+        display={`${g.shadows}`}
+        onChange={(v) => setGrade({ shadows: v })}
+      />
+      <SliderRow
+        label="シャープネス"
+        min={-100}
+        max={100}
+        step={1}
+        value={g.sharpness}
+        display={`${g.sharpness}`}
+        onChange={(v) => setGrade({ sharpness: v })}
       />
 
       <div

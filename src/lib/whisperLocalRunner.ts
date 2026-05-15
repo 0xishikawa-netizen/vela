@@ -23,7 +23,12 @@ export interface WhisperLocalRunnerConfig {
   outputFormat?: 'json' | 'srt' | 'vtt'
   /** 一時出力のベースパス用ディレクトリ（main が確保） */
   outputDir?: string
-  /** 将来: `--gpu` 等。現状 argv には出さない */
+  /**
+   * GPU 優先フラグ。
+   * - true: GPU 使用（`--gpu auto` を追加。whisper.cpp v1.8+ 対応）
+   * - false: CPU 強制（`-ng` / `--no-gpu` を追加）
+   * - undefined: フラグなし（ビルドのデフォルトに委ねる）
+   */
   preferGpu?: boolean
 }
 
@@ -62,6 +67,11 @@ export function buildWhisperLocalArgs(
   const lang = typeof config.language === 'string' && config.language.trim() ? config.language.trim() : undefined
   if (lang) args.push('-l', lang)
   if (config.translateToJapanese) args.push('--translate')
+  if (config.preferGpu === true) {
+    args.push('--gpu', 'auto')
+  } else if (config.preferGpu === false) {
+    args.push('-ng')
+  }
   const outBase = outputBasePathWithoutExt.trim()
   if (fmt === 'json') {
     args.push('-oj', '-of', outBase)

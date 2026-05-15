@@ -347,6 +347,19 @@ export default function TranscriptionMockSection() {
                       {j.errorMessage}
                     </p>
                   )}
+                  {j.stderrTail && j.status === 'failed' && (
+                    <details className="mb-1">
+                      <summary className="cursor-pointer text-[10px] opacity-60 select-none">
+                        ログを表示
+                      </summary>
+                      <pre
+                        className="mt-1 max-h-32 overflow-auto rounded px-2 py-1.5 text-[9px] leading-relaxed whitespace-pre-wrap break-all"
+                        style={{ background: 'var(--surface-2)', color: 'var(--muted)', border: '1px solid var(--border)' }}
+                      >
+                        {j.stderrTail}
+                      </pre>
+                    </details>
+                  )}
                   {j.status === 'completed' && j.resultSegments && (
                     <p className="mb-1 text-[10px] opacity-80">
                       キュー: {j.resultSegments.length} 件

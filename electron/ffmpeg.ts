@@ -614,6 +614,9 @@ export function exportVideo(
               outputOptions.push('-allow_sw', '1')
             }
             outputOptions.push('-r', String(fps), '-pix_fmt', 'yuv420p')
+            // VFR入力ソースを含む場合に備え CFR 出力を強制する
+            // ffmpeg 5+ は -fps_mode、旧バージョンは -vsync cfr でフォールバック
+            outputOptions.push('-fps_mode', 'cfr')
             if (hasAudio) {
               outputOptions.push('-c:a', 'aac', '-b:a', '192k')
             } else {

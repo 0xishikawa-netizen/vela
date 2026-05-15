@@ -13,7 +13,10 @@ import {
   type WhisperLocalRunnerConfig,
 } from '../../src/lib/whisperLocalRunner'
 import type { WhisperLocalIpcFinished } from '../../src/lib/whisperLocalIpcMap'
-import { whisperLocalExitLooksCanceled, whisperLocalProgressFromStreamChunks } from '../../src/lib/whisperLocalIpcMap'
+import {
+  whisperLocalExitLooksCanceled,
+  whisperLocalProgressFromStderr,
+} from '../../src/lib/whisperLocalIpcMap'
 
 const STDIO_CAP = 512 * 1024
 /** whisper 出力ファイルの読み取り上限（main のみ） */
@@ -53,11 +56,76 @@ function appendCapped(buf: string, chunk: Buffer): string {
 
 function sendProgress(sender: WebContents, runId: string, progress: number, detail?: string): void {
   try {
-    // TODO: whisper.cpp stderr の行から実進捗を parse して送る
     sender.send('whisperLocal:progress', { runId, progress, detail })
   } catch {
     /* ignore */
   }
+}
+
+/** 長尺チャンク分割の閾値（秒）。これを超えたらチャンク化する */
+const CHUNK_THRESHOLD_SEC = 600
+/** 1 チャンクの長さ（秒） */
+const CHUNK_DURATION_SEC = 300
+
+/**
+ * FFmpeg で音声の総尺を取得する（秒）。取得失敗時は undefined。
+ * spawn は ffmpeg -i のみなので副作用なし。
+ */
+async function getMediaDurationSec(mediaPath: string, ffmpegBin: string): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    let stderr = ''
+    let child: ReturnType<typeof spawn>
+    try {
+      child = spawn(ffmpegBin, ['-i', mediaPath], { stdio: ['ignore', 'ignore', 'pipe'] })
+    } catch {
+      resolve(undefined)
+      return
+    }
+    child.stderr?.on('data', (c: Buffer) => { stderr += c.toString('utf8') })
+    child.on('close', () => {
+      const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(stderr)
+      if (!m) { resolve(undefined); return }
+      const h = parseInt(m[1]!, 10)
+      const min = parseInt(m[2]!, 10)
+      const s = parseFloat(m[3]!)
+      resolve(h * 3600 + min * 60 + s)
+    })
+    child.on('error', () => resolve(undefined))
+  })
+}
+
+/**
+ * FFmpeg で音声を WAV に変換してチャンク抽出する。
+ * 戻り値はチャンクファイルパスの配列（start 昇順）。
+ */
+async function extractAudioChunks(
+  mediaPath: string,
+  totalSec: number,
+  workDir: string,
+  ffmpegBin: string,
+): Promise<Array<{ path: string; startSec: number; endSec: number }>> {
+  const chunks: Array<{ path: string; startSec: number; endSec: number }> = []
+  let start = 0
+  let idx = 0
+  while (start < totalSec) {
+    const end = Math.min(start + CHUNK_DURATION_SEC, totalSec)
+    const chunkPath = path.join(workDir, `chunk_${String(idx).padStart(3, '0')}.wav`)
+    await new Promise<void>((resolve, reject) => {
+      const args = [
+        '-y', '-i', mediaPath,
+        '-ss', String(start), '-t', String(end - start),
+        '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le',
+        chunkPath,
+      ]
+      const child = spawn(ffmpegBin, args, { stdio: 'ignore' })
+      child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg chunk exit ${code}`))))
+      child.on('error', reject)
+    })
+    chunks.push({ path: chunkPath, startSec: start, endSec: end })
+    start = end
+    idx++
+  }
+  return chunks
 }
 
 function isPayload(v: unknown): v is WhisperLocalStartPayload {
@@ -72,8 +140,108 @@ function isPayload(v: unknown): v is WhisperLocalStartPayload {
   )
 }
 
+type SpawnResult =
+  | { ok: true; segments: ReturnType<typeof parseWhisperJsonOrSrtOutput>['segments']; language?: string; durationSec?: number; rawOutputKind: 'json' | 'srt' | 'vtt' }
+  | { ok: false; kind: 'spawn' | 'process' | 'read_output' | 'parse' | 'canceled'; errorMessage: string; exitCode?: number; stderrTail?: string }
+
 /**
- * `whisperLocal:start` と同一の spawn〜成果物読取〜パース（Phase E-11: Electron スモーク entry から再利用）。
+ * 単一ファイルに対して Whisper を spawn し、成果物を読み取ってパース結果を返す内部ヘルパー。
+ * progress は progressBase〜progressEnd の範囲でスケーリングして送出する。
+ */
+async function spawnWhisperOnFile(
+  sender: WebContents,
+  runId: string,
+  bin: string,
+  cfg: WhisperLocalRunnerConfig,
+  inputPath: string,
+  outBase: string,
+  progressBase: number,
+  progressEnd: number,
+): Promise<SpawnResult> {
+  const args = buildWhisperLocalArgs(cfg, inputPath, outBase)
+  let stderrBuf = ''
+  let stdoutBuf = ''
+  let streamChunks = 0
+
+  const raw = await new Promise<SpawnResult>((resolve) => {
+    let settled = false
+    const finish = (r: SpawnResult): void => { if (!settled) { settled = true; resolve(r) } }
+
+    let child: ChildProcessWithoutNullStreams
+    try {
+      child = spawn(bin, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }) as unknown as ChildProcessWithoutNullStreams
+    } catch {
+      finish({ ok: false, kind: 'spawn', errorMessage: '起動に失敗しました' })
+      return
+    }
+
+    const run: ActiveRun = { runId, child, userCanceled: false }
+    active = run
+
+    const scale = (p: number) => progressBase + (progressEnd - progressBase) * p
+
+    child.stderr.on('data', (c: Buffer) => {
+      stderrBuf = appendCapped(stderrBuf, c)
+      streamChunks += 1
+      sendProgress(sender, runId, scale(whisperLocalProgressFromStderr(stderrBuf, streamChunks)), 'stderr')
+    })
+    child.stdout.on('data', (c: Buffer) => {
+      stdoutBuf = appendCapped(stdoutBuf, c)
+      streamChunks += 1
+      sendProgress(sender, runId, scale(whisperLocalProgressFromStderr(stderrBuf, streamChunks)), 'stdout')
+    })
+
+    child.on('error', () => {
+      if (active?.runId === runId) active = null
+      finish({ ok: false, kind: 'spawn', errorMessage: '起動に失敗しました' })
+    })
+
+    child.on('exit', (code, signal) => {
+      void (async () => {
+        const snap = active
+        active = null
+        if (settled) return
+
+        if (whisperLocalExitLooksCanceled(snap?.userCanceled ?? false, signal)) {
+          finish({ ok: false, kind: 'canceled', errorMessage: 'キャンセルしました' })
+          return
+        }
+
+        const stderrTail = stderrBuf.trim() ? stderrBuf.slice(-2048) : undefined
+
+        if (code !== 0 && code !== null) {
+          const hint = stderrTail ? ` (${stderrTail.slice(-120)})` : ''
+          finish({
+            ok: false, kind: 'process',
+            errorMessage: (`終了コード ${code}` + hint).slice(0, 280),
+            exitCode: code ?? undefined, stderrTail,
+          })
+          return
+        }
+
+        const artifact = await readWhisperOutputArtifact(outBase)
+        if (!artifact.ok) {
+          finish({ ok: false, kind: 'read_output', errorMessage: artifact.message, exitCode: code ?? 0, stderrTail })
+          return
+        }
+
+        const parsed = parseWhisperJsonOrSrtOutput(artifact.raw, artifact.rawOutputKind)
+        if (parsed.parseError || parsed.segments.length === 0) {
+          finish({ ok: false, kind: 'parse', errorMessage: parsed.parseError ?? 'パースに失敗しました', exitCode: code ?? 0, stderrTail })
+          return
+        }
+
+        finish({ ok: true, segments: parsed.segments, language: parsed.language, durationSec: parsed.durationSec, rawOutputKind: artifact.rawOutputKind })
+      })().catch(() => finish({ ok: false, kind: 'process', errorMessage: '内部エラー' }))
+    })
+  })
+
+  void stdoutBuf
+  return raw
+}
+
+/**
+ * `whisperLocal:start` と同一の spawn〜成果物読取〜パース。長尺ファイルは自動チャンク化する。
  * `registerWhisperLocalIpc` とは独立に呼べるが、同時実行は `active` でブロックされる。
  */
 export async function invokeWhisperLocalStart(
@@ -91,8 +259,7 @@ export async function invokeWhisperLocalStart(
     modelPath: payload.modelPath.trim(),
     language: payload.options?.language?.trim() || undefined,
     translateToJapanese: payload.options?.translateToJapanese === true,
-    outputFormat:
-      payload.outputFormat === 'srt' || payload.outputFormat === 'vtt' ? payload.outputFormat : 'json',
+    outputFormat: payload.outputFormat === 'srt' || payload.outputFormat === 'vtt' ? payload.outputFormat : 'json',
     preferGpu: payload.preferGpu === true,
   }
 
@@ -101,125 +268,113 @@ export async function invokeWhisperLocalStart(
     return { ok: false, runId, kind: 'validation', errorMessage: v.reason }
   }
 
+  const bin = cfg.binaryPath!.trim()
+  const sourceMedia = payload.sourceMediaPath.trim()
   const workDir = path.join(app.getPath('temp'), `vela-whisper-${runId}`)
   await mkdir(workDir, { recursive: true })
-  const outBase = path.join(workDir, 'out')
-  const args = buildWhisperLocalArgs(cfg, payload.sourceMediaPath.trim(), outBase)
-  const bin = cfg.binaryPath!.trim()
 
   sendProgress(sender, runId, 0, 'starting')
 
-  let stderrBuf = ''
-  let stdoutBuf = ''
-  let streamChunks = 0
+  try {
+    const ffmpegBin = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+    const totalSec = await getMediaDurationSec(sourceMedia, ffmpegBin)
 
-  const result = await new Promise<WhisperLocalIpcFinished>((resolve) => {
-    let settled = false
-    const finish = (r: WhisperLocalIpcFinished): void => {
-      if (settled) return
-      settled = true
-      resolve(r)
-    }
+    let result: WhisperLocalIpcFinished
 
-    let child: ChildProcessWithoutNullStreams
-    try {
-      child = spawn(bin, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }) as ChildProcessWithoutNullStreams
-    } catch {
-      finish({ ok: false, runId, kind: 'spawn', errorMessage: '起動に失敗しました' })
-      return
-    }
+    if (totalSec !== undefined && totalSec > CHUNK_THRESHOLD_SEC) {
+      // 長尺チャンク化モード
+      sendProgress(sender, runId, 0.02, 'chunking')
+      let chunks: Awaited<ReturnType<typeof extractAudioChunks>>
+      try {
+        chunks = await extractAudioChunks(sourceMedia, totalSec, workDir, ffmpegBin)
+      } catch (e) {
+        result = {
+          ok: false, runId, kind: 'process',
+          errorMessage: `チャンク分割失敗: ${e instanceof Error ? e.message : String(e)}`,
+        }
+        await rm(workDir, { recursive: true, force: true }).catch(() => {})
+        return result
+      }
 
-    const run: ActiveRun = { runId, child, userCanceled: false }
-    active = run
+      const allSegments: import('../../src/lib/types').SubtitleSegment[] = []
+      let language: string | undefined
+      let firstRawOutputKind: 'json' | 'srt' | 'vtt' = 'json'
+      let chunkCanceled = false
 
-    child.stderr.on('data', (c: Buffer) => {
-      stderrBuf = appendCapped(stderrBuf, c)
-      streamChunks += 1
-      sendProgress(sender, runId, whisperLocalProgressFromStreamChunks(streamChunks), 'stderr')
-    })
-    child.stdout.on('data', (c: Buffer) => {
-      stdoutBuf = appendCapped(stdoutBuf, c)
-      streamChunks += 1
-      sendProgress(sender, runId, whisperLocalProgressFromStreamChunks(streamChunks), 'stdout')
-    })
+      for (let i = 0; i < chunks.length; i++) {
+        const cur = active as ActiveRun | null
+        if (chunkCanceled || cur?.userCanceled) {
+          result = { ok: false, runId, kind: 'canceled', errorMessage: 'キャンセルしました' }
+          await rm(workDir, { recursive: true, force: true }).catch(() => {})
+          return result
+        }
+        const chunk = chunks[i]!
+        const chunkOutBase = path.join(workDir, `chunk_${i}_out`)
+        const progressBase = 0.05 + (i / chunks.length) * 0.9
+        const progressEnd = 0.05 + ((i + 1) / chunks.length) * 0.9
+        sendProgress(sender, runId, progressBase, `chunk ${i + 1}/${chunks.length}`)
 
-    child.on('error', () => {
-      if (active?.runId === runId) active = null
-      finish({ ok: false, runId, kind: 'spawn', errorMessage: '起動に失敗しました' })
-    })
+        const sr = await spawnWhisperOnFile(sender, runId, bin, cfg, chunk.path, chunkOutBase, progressBase, progressEnd)
+        if (!sr.ok) {
+          if (sr.kind === 'canceled') {
+            chunkCanceled = true
+            result = { ok: false, runId, kind: 'canceled', errorMessage: 'キャンセルしました' }
+          } else {
+            result = { ok: false, runId, kind: sr.kind, errorMessage: sr.errorMessage, exitCode: sr.exitCode, stderrTail: sr.stderrTail }
+          }
+          await rm(workDir, { recursive: true, force: true }).catch(() => {})
+          return result
+        }
 
-    child.on('exit', (code, signal) => {
-      void (async () => {
-        const snap = active
-        active = null
-        if (settled) return
+        if (i === 0) { language = sr.language; firstRawOutputKind = sr.rawOutputKind }
+        for (const seg of sr.segments) {
+          allSegments.push({
+            ...seg,
+            id: `${seg.id}-c${i}`,
+            startSec: seg.startSec + chunk.startSec,
+            endSec: seg.endSec + chunk.startSec,
+          })
+        }
+      }
 
-        const wasCanceled = whisperLocalExitLooksCanceled(snap?.userCanceled ?? false, signal)
-        if (wasCanceled) {
+      sendProgress(sender, runId, 1, 'completed')
+      result = {
+        ok: true, runId, exitCode: 0,
+        segments: allSegments.sort((a, b) => a.startSec - b.startSec),
+        language,
+        durationSec: totalSec,
+        rawOutputKind: firstRawOutputKind,
+      }
+    } else {
+      // 通常モード（単一ファイル）
+      const outBase = path.join(workDir, 'out')
+      const sr = await spawnWhisperOnFile(sender, runId, bin, cfg, sourceMedia, outBase, 0, 1)
+      if (!sr.ok) {
+        if (sr.kind === 'canceled') {
           sendProgress(sender, runId, 0, 'canceled')
-          finish({ ok: false, runId, kind: 'canceled', errorMessage: 'キャンセルしました' })
-          return
-        }
-
-        if (code !== 0 && code !== null) {
+          result = { ok: false, runId, kind: 'canceled', errorMessage: 'キャンセルしました' }
+        } else {
           sendProgress(sender, runId, 0, 'failed')
-          const hint = stderrBuf.trim() ? ` (${stderrBuf.slice(-120)})` : ''
-          finish({
-            ok: false,
-            runId,
-            kind: 'process',
-            errorMessage: (`終了コード ${code}` + hint).slice(0, 280),
-            exitCode: code ?? undefined,
-          })
-          return
+          result = { ok: false, runId, kind: sr.kind, errorMessage: sr.errorMessage, exitCode: sr.exitCode, stderrTail: sr.stderrTail }
         }
-
-        const artifact = await readWhisperOutputArtifact(outBase)
-        if (!artifact.ok) {
-          sendProgress(sender, runId, 0, 'failed')
-          finish({
-            ok: false,
-            runId,
-            kind: 'read_output',
-            errorMessage: artifact.message,
-            exitCode: code ?? 0,
-          })
-          return
-        }
-
-        const parsed = parseWhisperJsonOrSrtOutput(artifact.raw, artifact.rawOutputKind)
-        if (parsed.parseError || parsed.segments.length === 0) {
-          sendProgress(sender, runId, 1, 'parse')
-          finish({
-            ok: false,
-            runId,
-            kind: 'parse',
-            errorMessage: parsed.parseError ?? 'パースに失敗しました',
-            exitCode: code ?? 0,
-          })
-          return
-        }
-
+      } else {
         sendProgress(sender, runId, 1, 'completed')
-        finish({
-          ok: true,
-          runId,
-          exitCode: code ?? 0,
-          segments: parsed.segments,
-          language: parsed.language,
-          durationSec: parsed.durationSec,
-          rawOutputKind: artifact.rawOutputKind,
-        })
-      })().catch(() => {
-        finish({ ok: false, runId, kind: 'process', errorMessage: '内部エラー' })
-      })
-    })
-  })
+        result = {
+          ok: true, runId, exitCode: 0,
+          segments: sr.segments,
+          language: sr.language,
+          durationSec: sr.durationSec,
+          rawOutputKind: sr.rawOutputKind,
+        }
+      }
+    }
 
-  await rm(workDir, { recursive: true, force: true }).catch(() => {})
-  void stdoutBuf
-  void stderrBuf
-  return result
+    await rm(workDir, { recursive: true, force: true }).catch(() => {})
+    return result
+  } catch {
+    await rm(workDir, { recursive: true, force: true }).catch(() => {})
+    return { ok: false, runId, kind: 'process', errorMessage: '内部エラー' }
+  }
 }
 
 export function registerWhisperLocalIpc(): void {

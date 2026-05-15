@@ -395,6 +395,8 @@ export interface TranscriptionJob {
   createdAt: string
   updatedAt: string
   errorMessage?: string
+  /** Whisper local 失敗時: GUIログビューアで表示する stderr 末尾（最大 2KB） */
+  stderrTail?: string
   /** mock / Whisper 完了時にセット */
   resultSegments?: SubtitleSegment[]
   /** Whisper local 成功時: 読み取った成果物形式 */

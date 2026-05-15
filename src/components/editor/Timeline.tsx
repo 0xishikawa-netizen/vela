@@ -7,6 +7,7 @@ import { SNAP_THRESHOLD } from '../../lib/constants'
 import { useHistoryStore } from '../../store/historyStore'
 import TimelineRuler from './TimelineRuler'
 import TimelineTrack from './TimelineTrack'
+import SubtitleTimelineTrack from './SubtitleTimelineTrack'
 import Playhead from './Playhead'
 
 const TRACK_TYPE_ICON: Record<string, string> = {
@@ -112,7 +113,8 @@ export default function Timeline() {
   if (!current) return null
 
   const trackRows = current.tracks
-  const totalH = 28 + trackRows.length * 44
+  const subtitleTracks = current.subtitleTracks ?? []
+  const totalH = 28 + trackRows.length * 44 + subtitleTracks.length * 36
 
   return (
     <div
@@ -148,6 +150,23 @@ export default function Timeline() {
               </span>
             </div>
           ))}
+          {subtitleTracks.map((st) => (
+            <div
+              key={st.id}
+              className="flex items-center gap-2 border-b px-3"
+              style={{ height: 36, borderColor: 'var(--border)', background: 'rgba(80,100,160,0.06)' }}
+            >
+              <span
+                className="w-5 h-5 rounded flex items-center justify-center shrink-0 text-[10px] font-bold"
+                style={{ background: 'rgba(100,140,220,0.2)', color: 'rgba(130,170,255,0.9)' }}
+              >
+                CC
+              </span>
+              <span className="truncate text-[10px]" style={{ color: 'var(--muted)' }}>
+                {st.name}
+              </span>
+            </div>
+          ))}
         </div>
 
         {/* Scrollable timeline area */}
@@ -179,7 +198,7 @@ export default function Timeline() {
             {/* Tracks */}
             <div
               className="relative"
-              style={{ width: contentWidth, minWidth: contentWidth, height: trackRows.length * 44 }}
+              style={{ width: contentWidth, minWidth: contentWidth, height: trackRows.length * 44 + subtitleTracks.length * 36 }}
               onMouseDown={(e) => {
                 if (e.button !== 0) return
                 seekFromClientX(e.clientX)
@@ -212,10 +231,19 @@ export default function Timeline() {
                   }}
                 />
               ))}
+              {subtitleTracks.map((st) => (
+                <SubtitleTimelineTrack
+                  key={st.id}
+                  track={st}
+                  zoom={safeZoom}
+                  currentTime={currentTime}
+                  onSeek={setCurrentTime}
+                />
+              ))}
               <Playhead
                 currentTime={currentTime}
                 zoom={safeZoom}
-                height={trackRows.length * 44}
+                height={trackRows.length * 44 + subtitleTracks.length * 36}
                 onSeek={setCurrentTime}
               />
             </div>
