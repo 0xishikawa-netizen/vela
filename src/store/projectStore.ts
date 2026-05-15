@@ -13,6 +13,7 @@ import type {
   SubtitleTrack,
 } from '../lib/types'
 import { DEFAULT_COLOR_GRADE, DEFAULT_TRANSITION, DEFAULT_TELOP_ANIMATION, DEFAULT_TELOP_STYLE } from '../lib/types'
+import { ASPECT_RATIOS } from '../lib/aspectRatios'
 import {
   cloneProject,
   coerceTimelineSeconds,
@@ -93,14 +94,6 @@ interface ProjectStore {
   }) => void
   /** 完了した文字起こしジョブを `subtitleTracks` に 1 本追加（`transcriptionStore` 参照） */
   applyTranscriptionResultToSubtitleTrack: (jobId: string) => boolean
-}
-
-const ASPECT_RATIOS: Record<AspectRatio, { width: number; height: number }> = {
-  '16:9': { width: 1920, height: 1080 },
-  '9:16': { width: 1080, height: 1920 },
-  '1:1': { width: 1080, height: 1080 },
-  '4:3': { width: 1440, height: 1080 },
-  '21:9': { width: 2560, height: 1080 },
 }
 
 export const useProjectStore = create<ProjectStore>()(

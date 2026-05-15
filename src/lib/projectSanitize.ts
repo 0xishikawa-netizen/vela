@@ -14,17 +14,8 @@ import type {
   VideoClip,
 } from './types'
 import { DEFAULT_COLOR_GRADE } from './types'
+import { ASPECT_RATIOS, ASPECT_RATIO_KEYS } from './aspectRatios'
 import { sanitizeSubtitleSegment } from './subtitleFormat'
-
-const ASPECT_RATIOS: Record<AspectRatio, { width: number; height: number }> = {
-  '16:9': { width: 1920, height: 1080 },
-  '9:16': { width: 1080, height: 1920 },
-  '1:1': { width: 1080, height: 1080 },
-  '4:3': { width: 1440, height: 1080 },
-  '21:9': { width: 2560, height: 1080 },
-}
-
-const ASPECT_KEYS = new Set<AspectRatio>(['16:9', '9:16', '1:1', '4:3', '21:9'])
 const TRACK_TYPES = new Set<TrackType>(['video', 'audio', 'telop', 'image'])
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -51,7 +42,7 @@ export function makeDefaultTracks(): Track[] {
 
 function sanitizeAspectRatio(v: unknown): AspectRatio {
   const s = typeof v === 'string' ? v : ''
-  return ASPECT_KEYS.has(s as AspectRatio) ? (s as AspectRatio) : '16:9'
+  return ASPECT_RATIO_KEYS.has(s as AspectRatio) ? (s as AspectRatio) : '16:9'
 }
 
 function sanitizeTrackVolume(v: unknown): number {
