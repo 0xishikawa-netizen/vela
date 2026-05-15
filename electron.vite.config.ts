@@ -7,7 +7,10 @@ export default defineConfig({
   main: {
     build: {
       rollupOptions: {
-        input: resolve(__dirname, 'electron/main.ts'),
+        input: {
+          main: resolve(__dirname, 'electron/main.ts'),
+          'smoke-whisper-local': resolve(__dirname, 'electron/smoke-whisper-local-main.ts'),
+        },
         output: {
           /**
            * fixture が `out/main/chunks/ffmpeg-*.js` だけを Node で import するため、

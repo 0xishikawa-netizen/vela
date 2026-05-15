@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react'
 import TitleBar from '../components/layout/TitleBar'
+import UiToasts from '../components/layout/UiToasts'
 import Toolbar from '../components/layout/Toolbar'
 import Preview from '../components/editor/Preview'
 import Transport from '../components/editor/Transport'
@@ -68,6 +69,7 @@ export default function Editor() {
 
   return (
     <div className="flex h-screen min-h-0 flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
+      <UiToasts />
       <TitleBar />
 
       {/* Main body */}

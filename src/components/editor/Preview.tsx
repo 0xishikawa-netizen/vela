@@ -21,6 +21,7 @@ import {
   mixGainForAudioClip,
 } from '../../lib/audioMix'
 import { collectAllTelopClips, topVisualClipAtTime, trackContainingClipId } from '../../lib/visualTimeline'
+import { pushLutPreviewFailureToast } from '../../lib/lutPreviewUserToast'
 
 function fileSrc(abs: string) {
   const u = abs.replace(/\\/g, '/')
@@ -37,11 +38,11 @@ function fileSrc(abs: string) {
  *
  * ## `lutPreviewState === 'fallback'` になる条件（待機 `loading` ではない）
  * - `readCubeLutFile` が無い（ブラウザ等）→ 実質 `disabled`（LUT レイヤー未マウント）。`lutPath` だけある場合は開発時に一度だけ warn。
- * - **IPC** `readCubeLutFile` が `ok: false`。
- * - **`parseCubeLut` が throw**。
- * - **`createPreviewLutRenderer` が null**（WebGL 初期化失敗）。
- * - **`setLut` 後に `isReady()` が false**。
- * - **`render()` が false** かつ **video の `videoWidth` / `videoHeight` または image の `complete`+`naturalWidth` が既に確定**（未確定のフレームは **fallback にしない**で待機）。
+ * - **IPC** `readCubeLutFile` が `ok: false`（ユーザー向けトーストで通知）。
+ * - **`parseCubeLut` が throw**（同上）。
+ * - **`createPreviewLutRenderer` が null**（WebGL 初期化失敗、同上）。
+ * - **`setLut` 後に `isReady()` が false**（同上）。
+ * - **`render()` が false** かつ **video の `videoWidth` / `videoHeight` または image の `complete`+`naturalWidth` が既に確定**（未確定のフレームは **fallback にしない**で待機、確定後の失敗はトースト）。
  *
  * ## unmount / `lutPath` 空 / clip 切替
  * - `activeLutPath` 変更またはアンマウントで effect cleanup が **renderer dispose** + 状態を **`disabled` または次フレームで `loading`** に戻す。
@@ -176,6 +177,8 @@ export default function Preview() {
   const [hostW, setHostW] = useState(0)
   const [lutPreviewState, setLutPreviewState] = useState<LutPreviewUiState>('disabled')
   const lutDevWarnOnceRef = useRef(new Set<string>())
+  /** 同一 LUT 読込サイクルでユーザー向けトーストは 1 回まで（複数分岐の重複防止） */
+  const lutLoadUserToastOnceRef = useRef(false)
   const [imgLutNonce, setImgLutNonce] = useState(0)
   const [lutLayoutNonce, setLutLayoutNonce] = useState(0)
 
@@ -265,7 +268,14 @@ export default function Preview() {
   /** `lutPath` 変更時のみ IPC → parse → `setLut`（`makePreviewLutCacheKeyFromReadResult` で GPU 再 upload 抑制）。 */
   useEffect(() => {
     lutDevWarnOnceRef.current.clear()
+    lutLoadUserToastOnceRef.current = false
     const readLut = window.electronAPI?.readCubeLutFile
+    const toastBase = activeLutPath ?? 'lut'
+    const notifyLutLoadFailure = (kind: Parameters<typeof pushLutPreviewFailureToast>[0], parseDetail?: string) => {
+      if (lutLoadUserToastOnceRef.current) return
+      lutLoadUserToastOnceRef.current = true
+      pushLutPreviewFailureToast(kind, { dedupeBase: toastBase, parseDetail })
+    }
 
     if (!activeLutPath) {
       lutRendererRef.current?.dispose()
@@ -278,6 +288,7 @@ export default function Preview() {
       lutRendererRef.current?.dispose()
       lutRendererRef.current = null
       setLutPreviewState('disabled')
+      notifyLutLoadFailure('read_api_unavailable')
       try {
         if (import.meta.env.DEV && !lutDevWarnOnceRef.current.has('no-read-api')) {
           lutDevWarnOnceRef.current.add('no-read-api')
@@ -294,6 +305,7 @@ export default function Preview() {
       lutRendererRef.current?.dispose()
       lutRendererRef.current = null
       setLutPreviewState('fallback')
+      notifyLutLoadFailure('lut_canvas_missing')
       try {
         if (import.meta.env.DEV && !lutDevWarnOnceRef.current.has('no-lut-canvas')) {
           lutDevWarnOnceRef.current.add('no-lut-canvas')
@@ -310,6 +322,7 @@ export default function Preview() {
     if (!renderer) {
       lutRendererRef.current = null
       setLutPreviewState('fallback')
+      notifyLutLoadFailure('webgl_init_failed')
       try {
         if (import.meta.env.DEV && !lutDevWarnOnceRef.current.has('webgl-init')) {
           lutDevWarnOnceRef.current.add('webgl-init')
@@ -330,6 +343,7 @@ export default function Preview() {
         renderer.dispose()
         if (lutRendererRef.current === renderer) lutRendererRef.current = null
         setLutPreviewState('fallback')
+        notifyLutLoadFailure(res.reason)
         try {
           if (import.meta.env.DEV && !lutDevWarnOnceRef.current.has('ipc-fail')) {
             lutDevWarnOnceRef.current.add('ipc-fail')
@@ -349,6 +363,7 @@ export default function Preview() {
           renderer.dispose()
           if (lutRendererRef.current === renderer) lutRendererRef.current = null
           setLutPreviewState('fallback')
+          notifyLutLoadFailure('renderer_not_ready')
           try {
             if (import.meta.env.DEV && !lutDevWarnOnceRef.current.has('not-ready')) {
               lutDevWarnOnceRef.current.add('not-ready')
@@ -364,6 +379,7 @@ export default function Preview() {
         renderer.dispose()
         if (lutRendererRef.current === renderer) lutRendererRef.current = null
         setLutPreviewState('fallback')
+        notifyLutLoadFailure('parse_failed', e instanceof Error ? e.message : String(e))
         try {
           if (import.meta.env.DEV && !lutDevWarnOnceRef.current.has('parse-fail')) {
             lutDevWarnOnceRef.current.add('parse-fail')
@@ -431,6 +447,9 @@ export default function Preview() {
           /* noop */
         }
         setLutPreviewState('fallback')
+        if (activeLutPath) {
+          pushLutPreviewFailureToast('render_failed', { dedupeBase: activeLutPath })
+        }
       }
     }
 
@@ -450,6 +469,7 @@ export default function Preview() {
     active?.id,
     active?.type,
     activeSourcePath,
+    activeLutPath,
     isPlaying,
     outW,
     outH,
@@ -490,12 +510,16 @@ export default function Preview() {
         /* noop */
       }
       setLutPreviewState('fallback')
+      if (activeLutPath) {
+        pushLutPreviewFailureToast('render_failed', { dedupeBase: activeLutPath })
+      }
     }
   }, [
     lutPreviewState,
     active?.id,
     active?.type,
     activeSourcePath,
+    activeLutPath,
     isPlaying,
     currentTime,
     outW,

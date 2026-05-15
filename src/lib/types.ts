@@ -397,7 +397,37 @@ export interface TranscriptionJob {
   errorMessage?: string
   /** mock / Whisper 完了時にセット */
   resultSegments?: SubtitleSegment[]
+  /** Whisper local 成功時: 読み取った成果物形式 */
+  resultRawOutputKind?: 'json' | 'srt' | 'vtt'
   engine?: TranscriptionEngineId
+}
+
+/** アプリ環境に紐づく Whisper local 設定（`userData/whisper-local-settings.json`）。プロジェクト JSON には含めない */
+export interface WhisperLocalSettings {
+  binaryPath?: string
+  modelPath?: string
+  /** whisper.cpp `-l` 既定 */
+  defaultLanguage?: string
+  /** UI メモ（CLI argv には未使用。モデルマネージャ接続まで） */
+  defaultModelSize?: string
+  /** 将来: GPU 優先。現状は保存のみ */
+  preferGpu?: boolean
+}
+
+/** main `whisperLocal:start` へ渡すペイロード（renderer → IPC） */
+export interface WhisperLocalStartPayload {
+  runId: string
+  binaryPath: string
+  modelPath: string
+  sourceMediaPath: string
+  options?: TranscriptionOptions
+  /** argv 未反映。main が保持するのみ（将来 GPU フラグ接続） */
+  preferGpu?: boolean
+  /**
+   * CLI 出力形式。未指定時は main 側で `json`（`-oj` + `*.json`）。
+   * UI は E-9 時点では未露出（将来 settings / 上書き argv と併せて整理）。
+   */
+  outputFormat?: 'json' | 'srt' | 'vtt'
 }
 
 // ============================================================

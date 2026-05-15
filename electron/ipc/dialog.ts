@@ -118,4 +118,38 @@ export function registerDialogIpc(getWindow: () => BrowserWindow | null) {
   ipcMain.handle('shell:showItem', async (_, filePath: string) => {
     shell.showItemInFolder(filePath)
   })
+
+  ipcMain.handle(
+    'dialog:pickWhisperBinary',
+    async (): Promise<{ ok: true; path: string } | { ok: false; reason: 'no_window' | 'cancelled' }> => {
+      const win = getWindow()
+      if (!win) return { ok: false, reason: 'no_window' }
+      const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+        properties: ['openFile'],
+        filters: [
+          { name: '実行ファイル', extensions: ['exe', 'out', 'bin'] },
+          { name: 'すべて', extensions: ['*'] },
+        ],
+      })
+      if (canceled || !filePaths?.[0]) return { ok: false, reason: 'cancelled' }
+      return { ok: true, path: filePaths[0] }
+    },
+  )
+
+  ipcMain.handle(
+    'dialog:pickWhisperModel',
+    async (): Promise<{ ok: true; path: string } | { ok: false; reason: 'no_window' | 'cancelled' }> => {
+      const win = getWindow()
+      if (!win) return { ok: false, reason: 'no_window' }
+      const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+        properties: ['openFile'],
+        filters: [
+          { name: 'モデル', extensions: ['gguf', 'bin', 'pt', 'ggml'] },
+          { name: 'すべて', extensions: ['*'] },
+        ],
+      })
+      if (canceled || !filePaths?.[0]) return { ok: false, reason: 'cancelled' }
+      return { ok: true, path: filePaths[0] }
+    },
+  )
 }

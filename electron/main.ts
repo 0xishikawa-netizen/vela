@@ -8,6 +8,8 @@ import { registerProjectIpc } from './ipc/project'
 import { registerMediaIpc } from './ipc/media'
 import { registerExportIpc } from './ipc/export'
 import { registerAiIpc } from './ipc/ai'
+import { registerWhisperLocalSettingsIpc } from './ipc/whisperLocalSettings'
+import { registerWhisperLocalIpc } from './ipc/whisperLocal'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -131,6 +133,8 @@ app.whenReady().then(async () => {
   await mkdir(MODELS_DIR, { recursive: true })
 
   registerDialogIpc(getWindow)
+  registerWhisperLocalSettingsIpc()
+  registerWhisperLocalIpc()
   registerProjectIpc(PROJECTS_DIR)
   registerMediaIpc(THUMBNAILS_DIR)
   registerExportIpc(getWindow)

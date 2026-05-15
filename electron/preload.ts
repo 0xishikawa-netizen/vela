@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+import type { WhisperLocalProgressIpcPayload } from '../src/lib/whisperLocalIpcMap'
+
 contextBridge.exposeInMainWorld('electronAPI', {
   getRuntimePlatform: () =>
     ipcRenderer.invoke('app:getRuntimePlatform') as Promise<'darwin' | 'win32' | 'linux'>,
@@ -11,6 +13,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('dialog:saveSubtitleFile', payload),
   saveExportDialog: (name: string) => ipcRenderer.invoke('dialog:saveExport', name),
   showItemInFolder: (filePath: string) => ipcRenderer.invoke('shell:showItem', filePath),
+  pickWhisperBinary: () => ipcRenderer.invoke('dialog:pickWhisperBinary'),
+  pickWhisperModel: () => ipcRenderer.invoke('dialog:pickWhisperModel'),
+  loadWhisperLocalSettings: () => ipcRenderer.invoke('whisperLocalSettings:load'),
+  saveWhisperLocalSettings: (data: object) => ipcRenderer.invoke('whisperLocalSettings:save', data),
+
+  startWhisperLocalTranscription: (payload: object) => ipcRenderer.invoke('whisperLocal:start', payload),
+  cancelWhisperLocalTranscription: (runId: string) => ipcRenderer.invoke('whisperLocal:cancel', runId),
+  getWhisperLocalRunStatus: () => ipcRenderer.invoke('whisperLocal:getStatus'),
+  onWhisperLocalProgress: (cb: (p: WhisperLocalProgressIpcPayload) => void) => {
+    const wrapped = (_: unknown, p: WhisperLocalProgressIpcPayload) => {
+      cb(p)
+    }
+    ipcRenderer.on('whisperLocal:progress', wrapped)
+    return () => {
+      ipcRenderer.removeListener('whisperLocal:progress', wrapped)
+    }
+  },
 
   listProjects: () => ipcRenderer.invoke('project:list'),
   saveProject: (id: string, data: object) => ipcRenderer.invoke('project:save', id, data),

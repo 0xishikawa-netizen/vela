@@ -53,6 +53,9 @@ jobs:
       - name: Check transcription job mock (pure)
         run: npm run check:transcription
 
+      - name: Check whisper local smoke doc (pure)
+        run: npm run check:whisper-local-smoke-doc
+
       - name: Run Phase A fixture verification
         run: npm run fixture:phase-a:verify 2>&1 | tee fixtures/export/phase-a/verify-ci.log
 

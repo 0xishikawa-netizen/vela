@@ -55,11 +55,26 @@ export default function Toolbar() {
 
       <button
         type="button"
-        title={`${mod}E`}
-        className="btn-accent flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1 text-[11px] font-semibold whitespace-nowrap"
+        title={`書き出し（${mod}E）`}
+        className="btn-export-toolbar no-drag flex shrink-0 items-center gap-2 px-3.5 py-1.5 text-[12px] whitespace-nowrap"
         onClick={() => setExportModalOpen(true)}
       >
-        <span style={{ fontSize: 11, lineHeight: 1 }}>↑</span>
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.1"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="shrink-0 opacity-95"
+          aria-hidden
+        >
+          <path d="M12 15V4" />
+          <path d="m8 8 4-4 4 4" />
+          <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+        </svg>
         書き出し
       </button>
     </div>

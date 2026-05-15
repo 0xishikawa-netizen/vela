@@ -1,5 +1,5 @@
 /**
- * 文字起こしエンジンの共通 I/F。mock は実装済み。`whisper-local` は後続（whisper.cpp / faster-whisper / 同梱バイナリ等）。
+ * 文字起こしエンジンの共通 I/F。mock は実装済み。`whisper-local` は main `spawn`（Phase E-7）経由で試行可能。
  */
 
 import { buildMockTranscriptionSegments, validateTranscriptionSourcePath } from './mockTranscription'
@@ -8,6 +8,8 @@ import {
   validateWhisperLocalConfig,
   type WhisperLocalRunnerConfig,
 } from './whisperLocalRunner'
+import type { WhisperLocalIpcFinished } from './whisperLocalIpcMap'
+import { mapWhisperLocalIpcFinishedToEngineFields } from './whisperLocalIpcMap'
 import type { SubtitleSegment, TranscriptionEngineId, TranscriptionJobStatus, TranscriptionOptions } from './types'
 
 export type { TranscriptionEngineId } from './types'
@@ -23,6 +25,8 @@ export interface TranscriptionEngineResult {
   language?: string
   /** 推論が把握した尺（mock では概算） */
   durationSec?: number
+  /** Whisper local が読み取った成果物形式（成功時のみ） */
+  rawOutputKind?: 'json' | 'srt' | 'vtt'
   /** リクエスト不正・エンジン失敗時 */
   errorMessage?: string
   /** ユーザー取消で resolve した場合 */
@@ -159,18 +163,52 @@ export function runWhisperLocalTranscriptionEngine(
       cancel: () => {},
       finished: Promise.resolve({
         segments: [],
-        errorMessage: `${v.reason} ローカル Whisper は準備中です。`,
+        errorMessage: v.reason,
       }),
     }
   }
 
-  return {
-    cancel: () => {},
-    finished: Promise.resolve({
-      segments: [],
-      errorMessage: WHISPER_LOCAL_USER_MESSAGE_NOT_WIRED,
-    }),
+  const api = typeof window !== 'undefined' ? window.electronAPI : undefined
+  if (!api?.startWhisperLocalTranscription) {
+    return {
+      cancel: () => {},
+      finished: Promise.resolve({
+        segments: [],
+        errorMessage: WHISPER_LOCAL_USER_MESSAGE_NOT_WIRED,
+      }),
+    }
   }
+
+  const runId = deps.makeId()
+  let unsub: (() => void) | undefined
+  const handleProg = (p: { runId: string; progress: number; detail?: string }) => {
+    if (p.runId !== runId) return
+    onProgress({ progress: p.progress, status: 'running', detail: p.detail })
+  }
+  unsub = api.onWhisperLocalProgress?.(handleProg)
+
+  const cancel = (): void => {
+    void api.cancelWhisperLocalTranscription?.(runId)
+  }
+
+  const finished = (async (): Promise<TranscriptionEngineResult> => {
+    try {
+      const raw = (await api.startWhisperLocalTranscription({
+        runId,
+        binaryPath: cfg.binaryPath!.trim(),
+        modelPath: cfg.modelPath!.trim(),
+        sourceMediaPath: request.sourceMediaPath.trim(),
+        options: request.options,
+        preferGpu: cfg.preferGpu === true,
+        outputFormat: cfg.outputFormat === 'srt' || cfg.outputFormat === 'vtt' ? cfg.outputFormat : 'json',
+      })) as WhisperLocalIpcFinished
+      return mapWhisperLocalIpcFinishedToEngineFields(raw)
+    } finally {
+      unsub?.()
+    }
+  })()
+
+  return { cancel, finished }
 }
 
 /** エンジン ID に応じた runner（UI / store は当面 `mock` のみ） */

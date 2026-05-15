@@ -1,5 +1,6 @@
-import type { Caption, MediaFile, Project } from './lib/types'
+import type { Caption, MediaFile, Project, WhisperLocalStartPayload } from './lib/types'
 import type { ExportDiagnosticsRunBuffer } from './lib/exportDiagnostics'
+import type { WhisperLocalIpcFinished, WhisperLocalProgressIpcPayload } from './lib/whisperLocalIpcMap'
 
 export interface ElectronAPI {
   /** 書き出し UI で HW エンコーダ選択肢の可否判定に使用 */
@@ -17,6 +18,21 @@ export interface ElectronAPI {
   >
   saveExportDialog: (name: string) => Promise<string | undefined>
   showItemInFolder: (filePath: string) => Promise<void>
+
+  pickWhisperBinary?: () => Promise<
+    { ok: true; path: string } | { ok: false; reason: 'no_window' | 'cancelled' }
+  >
+  pickWhisperModel?: () => Promise<
+    { ok: true; path: string } | { ok: false; reason: 'no_window' | 'cancelled' }
+  >
+  loadWhisperLocalSettings?: () => Promise<unknown>
+  saveWhisperLocalSettings?: (data: object) => Promise<void>
+
+  startWhisperLocalTranscription?: (payload: WhisperLocalStartPayload) => Promise<WhisperLocalIpcFinished>
+  cancelWhisperLocalTranscription?: (runId: string) => Promise<{ ok: boolean; reason?: string }>
+  getWhisperLocalRunStatus?: () => Promise<{ busy: boolean; runId?: string }>
+  /** 戻り値で removeListener（単一ジョブ想定） */
+  onWhisperLocalProgress?: (cb: (p: WhisperLocalProgressIpcPayload) => void) => () => void
 
   listProjects: () => Promise<Project[]>
   saveProject: (id: string, data: object) => Promise<void>

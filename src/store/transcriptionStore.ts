@@ -3,6 +3,8 @@ import { v4 as uuid } from 'uuid'
 import type { TranscriptionEngineId, TranscriptionJob, TranscriptionOptions } from '../lib/types'
 import { validateTranscriptionSourcePath } from '../lib/mockTranscription'
 import { runTranscriptionEngine } from '../lib/transcriptionEngine'
+import { settingsToRunnerConfig } from '../lib/whisperLocalSettings'
+import { useWhisperLocalSettingsStore } from './whisperLocalSettingsStore'
 
 const jobRunCancels = new Map<string, () => void>()
 
@@ -91,6 +93,16 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
     }
     set((s) => ({ jobs: [...s.jobs, job] }))
 
+    const wBase = settingsToRunnerConfig(useWhisperLocalSettingsStore.getState().settings)
+    const whisperLocalConfig =
+      engineId === 'whisper-local'
+        ? {
+            ...wBase,
+            language: options.language?.trim() || wBase.language,
+            translateToJapanese: options.translateToJapanese === true,
+          }
+        : undefined
+
     const handle = runTranscriptionEngine(
       engineId,
       { sourceMediaPath: trimmed, options, maxDurationSec: meta?.maxDurationSec },
@@ -104,7 +116,7 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
           }),
         }))
       },
-      { makeId: () => uuid() },
+      { makeId: () => uuid(), whisperLocalConfig },
     )
 
     registerJobCancel(jobId, handle.cancel)
@@ -121,6 +133,7 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
             progress: 0,
             errorMessage: result.errorMessage,
             resultSegments: undefined,
+            resultRawOutputKind: undefined,
           }),
         }))
         return
@@ -141,6 +154,8 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
           status: 'completed',
           progress: 1,
           resultSegments: result.segments,
+          language: result.language ?? cur.language,
+          resultRawOutputKind: result.rawOutputKind,
         }),
       }))
     })

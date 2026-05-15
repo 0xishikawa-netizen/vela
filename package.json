@@ -32,6 +32,8 @@
     "check:export-presets": "node scripts/check-export-presets.mjs",
     "check:export-diagnostics": "node scripts/check-export-diagnostics.mjs",
     "check:export-platform-smoke-doc": "node scripts/check-export-platform-smoke-doc.mjs",
+    "check:whisper-local-smoke-doc": "node scripts/check-whisper-local-smoke-doc.mjs",
+    "smoke:whisper-local:electron": "node scripts/run-smoke-whisper-local-electron.cjs",
     "check:subtitles": "node scripts/check-subtitles.mjs",
     "check:transcription": "node scripts/check-transcription.mjs"
   },

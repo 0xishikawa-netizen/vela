@@ -1,7 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useProjectStore } from '../../store/projectStore'
 import { useTranscriptionStore } from '../../store/transcriptionStore'
+import { useWhisperLocalSettingsStore } from '../../store/whisperLocalSettingsStore'
 import type { TranscriptionEngineId, TranscriptionOptions } from '../../lib/types'
+import { validateWhisperLocalConfig } from '../../lib/whisperLocalRunner'
+import { settingsToRunnerConfig } from '../../lib/whisperLocalSettings'
 
 function statusLabel(status: string): string {
   switch (status) {
@@ -30,6 +33,23 @@ export default function TranscriptionMockSection() {
   const clearTranscriptionJobs = useTranscriptionStore((s) => s.clearTranscriptionJobs)
   const applyTranscriptionResultToSubtitleTrack = useProjectStore((s) => s.applyTranscriptionResultToSubtitleTrack)
 
+  const whisperSettings = useWhisperLocalSettingsStore((s) => s.settings)
+  const whisperHydrated = useWhisperLocalSettingsStore((s) => s.hydrated)
+  const loadWhisperSettings = useWhisperLocalSettingsStore((s) => s.load)
+  const patchWhisperSettings = useWhisperLocalSettingsStore((s) => s.patch)
+
+  useEffect(() => {
+    void loadWhisperSettings()
+  }, [loadWhisperSettings])
+
+  const whisperValidation = useMemo(
+    () => validateWhisperLocalConfig(settingsToRunnerConfig(whisperSettings)),
+    [whisperSettings],
+  )
+  const whisperReady = whisperValidation.ok
+  const whisperIpcReady =
+    whisperReady && typeof window !== 'undefined' && Boolean(window.electronAPI?.startWhisperLocalTranscription)
+
   const mediaPaths = useMemo(() => {
     if (!current) return []
     const set = new Set<string>()
@@ -52,6 +72,10 @@ export default function TranscriptionMockSection() {
   const [engineId, setEngineId] = useState<TranscriptionEngineId>('mock')
   const [hint, setHint] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (engineId === 'whisper-local' && !whisperIpcReady) setEngineId('mock')
+  }, [engineId, whisperIpcReady])
+
   const effectiveSource = (sourcePick || sourceManual).trim()
 
   const options: TranscriptionOptions = useMemo(
@@ -69,16 +93,40 @@ export default function TranscriptionMockSection() {
       setHint('プロジェクトを開いてください。')
       return
     }
-    if (engineId !== 'mock') {
-      setHint('Whisper local はまだ実行できません（準備中）。')
-      return
-    }
     const maxDurationSec =
       typeof current.duration === 'number' && Number.isFinite(current.duration) && current.duration > 0
         ? current.duration
         : undefined
     const id = startTranscription(engineId, effectiveSource || '/mock/no-media-path', options, { maxDurationSec })
-    setHint(`ジョブを開始しました（id: ${id.slice(0, 8)}…）`)
+    if (engineId === 'whisper-local') {
+      setHint(
+        window.electronAPI?.startWhisperLocalTranscription
+          ? `ジョブを開始しました（id: ${id.slice(0, 8)}…）。実験的: whisper.cpp 互換 CLI が必要です。失敗時は短いメッセージを確認してください。`
+          : `ジョブを開始しました（id: ${id.slice(0, 8)}…）。IPC が無いため失敗します。`,
+      )
+    } else {
+      setHint(`ジョブを開始しました（id: ${id.slice(0, 8)}…）`)
+    }
+  }
+
+  const pickBinary = async () => {
+    const api = window.electronAPI
+    if (!api?.pickWhisperBinary) {
+      setHint('Electron 外ではファイル選択できません。')
+      return
+    }
+    const r = await api.pickWhisperBinary()
+    if (r.ok) patchWhisperSettings({ binaryPath: r.path })
+  }
+
+  const pickModel = async () => {
+    const api = window.electronAPI
+    if (!api?.pickWhisperModel) {
+      setHint('Electron 外ではファイル選択できません。')
+      return
+    }
+    const r = await api.pickWhisperModel()
+    if (r.ok) patchWhisperSettings({ modelPath: r.path })
   }
 
   const recentJobs = useMemo(() => [...jobs].reverse(), [jobs])
@@ -90,10 +138,10 @@ export default function TranscriptionMockSection() {
       onMouseDown={(e) => e.stopPropagation()}
     >
       <h4 className="mb-1 text-[11px] font-semibold" style={{ color: 'var(--muted-2)' }}>
-        文字起こし（mock / Whisper local 準備中）
+        文字起こし（mock / Whisper local 設定）
       </h4>
       <p className="mb-2 text-[10px] leading-relaxed" style={{ color: 'var(--muted-2)' }}>
-        mock は試用できます。Whisper local はバイナリ・モデル・main IPC が未接続です（ロードマップ Phase E-5 以降）。
+        mock は試用できます。Whisper local は binary・model と IPC が揃うと選択できます（実験的・whisper.cpp 互換 CLI）。正常終了時は JSON/SRT/VTT をパースして字幕キューに反映できます（CLI 差で失敗する場合は短いエラーを確認）。
       </p>
 
       {!current ? (
@@ -111,8 +159,18 @@ export default function TranscriptionMockSection() {
                 onChange={(e) => setEngineId(e.target.value as TranscriptionEngineId)}
               >
                 <option value="mock">mock（実行可）</option>
-                <option value="whisper-local" disabled>
-                  Whisper local（準備中・バイナリ未同梱）
+                <option
+                  value="whisper-local"
+                  disabled={!whisperIpcReady}
+                  title={
+                    !whisperReady
+                      ? 'binary と model の両方を設定してください'
+                      : !whisperIpcReady
+                        ? 'Electron の Whisper IPC が利用できません'
+                        : '実験的: whisper.cpp 互換 CLI'
+                  }
+                >
+                  Whisper local（実験的）
                 </option>
               </select>
             </label>
@@ -174,11 +232,86 @@ export default function TranscriptionMockSection() {
               />
               仮訳ラベル付き mock（translateToJapanese）
             </label>
+
+            <details className="rounded border p-2 text-[10px]" style={{ borderColor: 'var(--border)' }}>
+              <summary className="cursor-pointer select-none font-medium" style={{ color: 'var(--label)' }}>
+                Whisper local 設定（{whisperHydrated ? '保存先: userData' : '読み込み中…'}）
+              </summary>
+              <div className="mt-2 space-y-2">
+                <label className="ui-label flex min-w-0 flex-col gap-1">
+                  binary パス（whisper.cpp 等）
+                  <div className="flex min-w-0 flex-wrap gap-1">
+                    <input
+                      className="ui-input min-w-0 flex-1 py-1.5 text-[11px]"
+                      placeholder="/path/to/main"
+                      value={whisperSettings.binaryPath ?? ''}
+                      onChange={(e) => patchWhisperSettings({ binaryPath: e.target.value })}
+                    />
+                    <button type="button" className="btn-ghost shrink-0 px-2 py-1.5 text-[11px]" onClick={() => void pickBinary()}>
+                      参照…
+                    </button>
+                  </div>
+                </label>
+                <label className="ui-label flex min-w-0 flex-col gap-1">
+                  model パス（.gguf / .bin 等）
+                  <div className="flex min-w-0 flex-wrap gap-1">
+                    <input
+                      className="ui-input min-w-0 flex-1 py-1.5 text-[11px]"
+                      placeholder="/path/to/model.gguf"
+                      value={whisperSettings.modelPath ?? ''}
+                      onChange={(e) => patchWhisperSettings({ modelPath: e.target.value })}
+                    />
+                    <button type="button" className="btn-ghost shrink-0 px-2 py-1.5 text-[11px]" onClick={() => void pickModel()}>
+                      参照…
+                    </button>
+                  </div>
+                </label>
+                <label className="ui-label flex min-w-0 flex-col gap-1">
+                  既定言語（ジョブで「自動」を選んだときに -l へ）
+                  <input
+                    className="ui-input w-full py-1.5 text-[11px]"
+                    placeholder="ja"
+                    value={whisperSettings.defaultLanguage ?? ''}
+                    onChange={(e) => patchWhisperSettings({ defaultLanguage: e.target.value })}
+                  />
+                </label>
+                <label className="ui-label flex min-w-0 flex-col gap-1 opacity-70">
+                  モデル規模メモ（UI のみ・argv 未使用）
+                  <input
+                    className="ui-input w-full py-1.5 text-[11px]"
+                    placeholder="base"
+                    value={whisperSettings.defaultModelSize ?? ''}
+                    onChange={(e) => patchWhisperSettings({ defaultModelSize: e.target.value })}
+                  />
+                </label>
+                <label className="ui-label flex items-center gap-2" title="argv 反映は spawn 接続後">
+                  <input
+                    type="checkbox"
+                    checked={whisperSettings.preferGpu === true}
+                    onChange={(e) => patchWhisperSettings({ preferGpu: e.target.checked })}
+                  />
+                  GPU 優先（保存のみ・argv 未使用）
+                </label>
+                <p
+                  className="rounded px-2 py-1 text-[10px]"
+                  style={{
+                    color: whisperReady ? 'var(--ok, #6a9)' : 'var(--danger, #c44)',
+                    background: 'var(--surface-1, rgba(0,0,0,0.12))',
+                  }}
+                >
+                  {whisperReady
+                    ? '検証: binary と model が揃いました。Whisper local を選択して実行できます。'
+                    : !whisperValidation.ok
+                      ? `検証: ${whisperValidation.reason}`
+                      : ''}
+                </p>
+              </div>
+            </details>
           </div>
 
           <div className="mb-2 flex flex-wrap gap-2">
             <button type="button" className="btn-ghost px-2 py-1.5 text-[11px]" onClick={runJob}>
-              文字起こしを実行（mock）
+              文字起こしを実行{engineId === 'mock' ? '（mock）' : '（Whisper local）'}
             </button>
             <button
               type="button"
@@ -215,7 +348,10 @@ export default function TranscriptionMockSection() {
                     </p>
                   )}
                   {j.status === 'completed' && j.resultSegments && (
-                    <p className="mb-1 text-[10px] opacity-80">キュー: {j.resultSegments.length} 件</p>
+                    <p className="mb-1 text-[10px] opacity-80">
+                      キュー: {j.resultSegments.length} 件
+                      {j.resultRawOutputKind ? ` · 読取: ${j.resultRawOutputKind}` : ''}
+                    </p>
                   )}
                   <div className="flex flex-wrap gap-2">
                     <button
