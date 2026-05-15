@@ -2,6 +2,7 @@ import { ipcMain, dialog, shell, type BrowserWindow } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { app } from 'electron'
+import { allowlistMediaPaths } from '../mediaPathAllowlist'
 
 const SUBTITLE_FILE_MAX_BYTES = 2 * 1024 * 1024
 
@@ -35,6 +36,7 @@ export function registerDialogIpc(getWindow: () => BrowserWindow | null) {
         },
       ],
     })
+    allowlistMediaPaths(filePaths)
     return filePaths
   })
 
@@ -45,7 +47,9 @@ export function registerDialogIpc(getWindow: () => BrowserWindow | null) {
       properties: ['openFile'],
       filters: [{ name: 'LUT (cube)', extensions: ['cube'] }],
     })
-    return filePaths?.[0]
+    const p = filePaths?.[0]
+    if (p) allowlistMediaPaths([p])
+    return p
   })
 
   ipcMain.handle(
@@ -62,6 +66,7 @@ export function registerDialogIpc(getWindow: () => BrowserWindow | null) {
       })
       if (canceled || !filePaths?.[0]) return { ok: false, reason: 'cancelled' }
       const p = filePaths[0]
+      allowlistMediaPaths([p])
       try {
         const buf = await readFile(p)
         if (buf.length > SUBTITLE_FILE_MAX_BYTES) return { ok: false, reason: 'too_large' }
@@ -132,6 +137,7 @@ export function registerDialogIpc(getWindow: () => BrowserWindow | null) {
         ],
       })
       if (canceled || !filePaths?.[0]) return { ok: false, reason: 'cancelled' }
+      allowlistMediaPaths([filePaths[0]])
       return { ok: true, path: filePaths[0] }
     },
   )
@@ -149,6 +155,7 @@ export function registerDialogIpc(getWindow: () => BrowserWindow | null) {
         ],
       })
       if (canceled || !filePaths?.[0]) return { ok: false, reason: 'cancelled' }
+      allowlistMediaPaths([filePaths[0]])
       return { ok: true, path: filePaths[0] }
     },
   )

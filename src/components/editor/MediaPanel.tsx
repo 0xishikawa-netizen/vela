@@ -13,16 +13,21 @@ export default function MediaPanel() {
 
   const pick = async () => {
     setError(null)
+    const api = typeof window !== 'undefined' ? window.electronAPI : undefined
+    if (!api?.openMediaDialog) {
+      setError('Electron の API が使えません')
+      return
+    }
     try {
-      const paths = await window.electronAPI.openMediaDialog()
+      const paths = await api.openMediaDialog()
       if (!paths?.length) return
       const next: { path: string; thumb?: string; name: string; type: string }[] = []
       for (const p of paths) {
         try {
-          const info = await window.electronAPI.getMediaInfo(p)
+          const info = await api.getMediaInfo(p)
           let thumb: string | undefined
           try {
-            thumb = await window.electronAPI.getThumbnail(p, 0)
+            thumb = await api.getThumbnail(p, 0)
           } catch {
             /* ignore */
           }
@@ -40,7 +45,9 @@ export default function MediaPanel() {
 
   const addToTimeline = async (path: string, type: string) => {
     if (!current) return
-    const info = await window.electronAPI.getMediaInfo(path)
+    const api = typeof window !== 'undefined' ? window.electronAPI : undefined
+    if (!api?.getMediaInfo) return
+    const info = await api.getMediaInfo(path)
     const dur = coerceTimelineSeconds(info.duration) || 5
     const videoTrack = current.tracks.find((t) => t.type === 'video')
     const audioTrack = current.tracks.find((t) => t.type === 'audio')

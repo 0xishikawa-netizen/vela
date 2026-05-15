@@ -126,7 +126,14 @@ export default function Home() {
   const [electronApiMissing, setElectronApiMissing] = useState(false)
 
   const checkElectronApi = () => {
-    if (typeof window !== 'undefined' && window.electronAPI?.saveProject && window.electronAPI?.loadProject) {
+    if (typeof window === 'undefined') return false
+    const api = window.electronAPI
+    if (
+      api &&
+      typeof api.saveProject === 'function' &&
+      typeof api.loadProject === 'function' &&
+      typeof api.listProjects === 'function'
+    ) {
       setElectronApiMissing(false)
       return true
     }

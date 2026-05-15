@@ -6,6 +6,9 @@ const waveformInflight = new Map<string, Promise<void>>()
 
 type PanelType = 'properties' | 'text' | 'subtitles' | 'effects' | 'audio' | 'ai'
 
+/** 音声波形の読み込み状態（パスごと）。loading / failed / ready は排他。 */
+export type WaveformLoadPhase = 'idle' | 'loading' | 'ready' | 'failed'
+
 interface EditorStore {
   currentTime: number
   isPlaying: boolean
@@ -17,8 +20,8 @@ interface EditorStore {
   exportModalOpen: boolean
   /** 音声ファイルパス → 波形 peaks（in-memory cache、`src/lib/waveform.ts` の Map と併用） */
   waveforms: Record<string, WaveformPeaks>
-  waveformFailed: Record<string, true>
-  waveformLoading: Record<string, true>
+  /** パスごとの波形取得フェーズ（`waveformFailed` / `waveformLoading` の単一モデル） */
+  waveformPhase: Record<string, WaveformLoadPhase>
 
   setCurrentTime: (t: number) => void
   setPlaying: (v: boolean) => void
@@ -43,8 +46,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   scrollLeft: 0,
   exportModalOpen: false,
   waveforms: {},
-  waveformFailed: {},
-  waveformLoading: {},
+  waveformPhase: {},
 
   resetSession: () => {
     clearWaveformPeakCache()
@@ -58,8 +60,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       scrollLeft: 0,
       exportModalOpen: false,
       waveforms: {},
-      waveformFailed: {},
-      waveformLoading: {},
+      waveformPhase: {},
     })
   },
 
@@ -82,10 +83,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
     const run = (async () => {
       const st = get()
-      if (st.waveformFailed[key]) return
+      if (st.waveformPhase[key] === 'failed') return
       if (st.waveforms[key]?.peaks?.length) return
 
-      set((s) => ({ waveformLoading: { ...s.waveformLoading, [key]: true } }))
+      set((s) => ({ waveformPhase: { ...s.waveformPhase, [key]: 'loading' } }))
 
       const api = typeof window !== 'undefined' ? window.electronAPI : undefined
       const toU8 = (data: Uint8Array | { buffer: ArrayBuffer; byteOffset?: number; byteLength?: number }): Uint8Array => {
@@ -126,16 +127,22 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
             : undefined,
         })
         if (peaksData?.peaks?.length) {
-          set((s) => ({ waveforms: { ...s.waveforms, [key]: peaksData } }))
+          set((s) => ({
+            waveforms: { ...s.waveforms, [key]: peaksData },
+            waveformPhase: { ...s.waveformPhase, [key]: 'ready' },
+          }))
         } else {
-          set((s) => ({ waveformFailed: { ...s.waveformFailed, [key]: true } }))
+          set((s) => ({ waveformPhase: { ...s.waveformPhase, [key]: 'failed' } }))
         }
       } catch {
-        set((s) => ({ waveformFailed: { ...s.waveformFailed, [key]: true } }))
+        set((s) => ({ waveformPhase: { ...s.waveformPhase, [key]: 'failed' } }))
       } finally {
         set((s) => {
-          const { [key]: _rm, ...rest } = s.waveformLoading
-          return { waveformLoading: rest }
+          const cur = s.waveformPhase[key]
+          if (cur === 'loading') {
+            return { waveformPhase: { ...s.waveformPhase, [key]: 'failed' } }
+          }
+          return {}
         })
       }
     })()

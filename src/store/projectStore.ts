@@ -21,6 +21,7 @@ import {
   makeDefaultTracks,
   sanitizeProject,
 } from '../lib/projectSanitize'
+import { collectMediaSourcePathsFromProject } from '../lib/projectMediaPaths'
 import {
   applySubtitleSegmentPatch,
   type SubtitleSegmentPatch,
@@ -177,6 +178,7 @@ export const useProjectStore = create<ProjectStore>()(
         s.current = forEditor
       })
       useHistoryStore.getState().reset(forEditor)
+      void api.registerMediaAllowlistPaths?.(collectMediaSourcePathsFromProject(project))
     },
 
     saveProject: async () => {
@@ -226,6 +228,8 @@ export const useProjectStore = create<ProjectStore>()(
       set((s) => {
         s.current = cloneProject(p)
       })
+      const api = typeof window !== 'undefined' ? window.electronAPI : undefined
+      void api?.registerMediaAllowlistPaths?.(collectMediaSourcePathsFromProject(p))
     },
 
     addTrack: (type) =>
@@ -415,7 +419,7 @@ export const useProjectStore = create<ProjectStore>()(
         s.current.duration = Math.max(maxEnd, computed)
       }),
 
-    importSubtitleText: (filePath, text, kind) =>
+    importSubtitleText: (filePath, text, kind) => {
       set((s) => {
         if (!s.current) return
         const segmentsRaw = kind === 'vtt' ? parseVtt(text) : parseSrt(text)
@@ -433,7 +437,10 @@ export const useProjectStore = create<ProjectStore>()(
         })
         const end = computeTimelineEndSeconds(s.current)
         if (end > s.current.duration) s.current.duration = end
-      }),
+      })
+      const api = typeof window !== 'undefined' ? window.electronAPI : undefined
+      void api?.registerMediaAllowlistPaths?.([filePath])
+    },
 
     subtitleTracksClear: () =>
       set((s) => {

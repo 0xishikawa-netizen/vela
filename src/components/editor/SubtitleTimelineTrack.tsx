@@ -20,12 +20,14 @@ function SegmentBar({
   zoom,
   currentTime,
   trackId,
+  trackName,
   onSeek,
 }: {
   seg: SubtitleSegment
   zoom: number
   currentTime: number
   trackId: string
+  trackName: string
   onSeek: (t: number) => void
 }) {
   const updateSubtitleSegment = useProjectStore((s) => s.updateSubtitleSegment)
@@ -78,8 +80,12 @@ function SegmentBar({
     ;(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
   }, [])
 
+  const segLabel = `${trackName}: ${seg.text.trim().slice(0, 48) || '（無テキスト）'} ${seg.startSec.toFixed(1)}〜${seg.endSec.toFixed(1)}秒`
+
   return (
     <div
+      role="group"
+      aria-label={segLabel}
       className="absolute top-1 select-none"
       style={{ left, width, height: TRACK_H - 8, touchAction: 'none', cursor: 'grab' }}
       onPointerDown={(e) => handlePointerDown(e, 'move')}
@@ -109,6 +115,9 @@ function SegmentBar({
 
       {/* トリムハンドル: 左端 */}
       <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="字幕の開始位置を調整"
         className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize z-10"
         onPointerDown={(e) => handlePointerDown(e, 'trimStart')}
         onPointerMove={handlePointerMove}
@@ -117,6 +126,9 @@ function SegmentBar({
       />
       {/* トリムハンドル: 右端 */}
       <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="字幕の終了位置を調整"
         className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize z-10"
         onPointerDown={(e) => handlePointerDown(e, 'trimEnd')}
         onPointerMove={handlePointerMove}
@@ -131,6 +143,8 @@ export default function SubtitleTimelineTrack({ track, zoom, currentTime, onSeek
   return (
     <div
       className="relative"
+      role="region"
+      aria-label={`字幕トラック ${track.name}`}
       style={{ height: TRACK_H, borderBottom: '1px solid var(--border)', background: 'rgba(80,100,160,0.08)' }}
     >
       {track.segments.map((seg) => (
@@ -140,6 +154,7 @@ export default function SubtitleTimelineTrack({ track, zoom, currentTime, onSeek
           zoom={zoom}
           currentTime={currentTime}
           trackId={track.id}
+          trackName={track.name}
           onSeek={onSeek}
         />
       ))}

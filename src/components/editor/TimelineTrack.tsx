@@ -32,8 +32,7 @@ export default function TimelineTrack({
   onSplitAt,
 }: Props) {
   const waveforms = useEditorStore((s) => s.waveforms)
-  const waveformLoading = useEditorStore((s) => s.waveformLoading)
-  const waveformFailed = useEditorStore((s) => s.waveformFailed)
+  const waveformPhase = useEditorStore((s) => s.waveformPhase)
   const loadWaveform = useEditorStore((s) => s.loadWaveform)
 
   const audioPathsKey = useMemo(
@@ -71,10 +70,12 @@ export default function TimelineTrack({
               : undefined
           }
           waveformPlaceholder={
-            c.type === 'audio' && !waveforms[c.sourcePath] && !waveformFailed[c.sourcePath]
+            c.type === 'audio' &&
+            !waveforms[c.sourcePath] &&
+            (waveformPhase[c.sourcePath] ?? 'idle') !== 'failed'
           }
-          waveformLoading={c.type === 'audio' ? Boolean(waveformLoading[c.sourcePath]) : false}
-          waveformFailed={c.type === 'audio' ? Boolean(waveformFailed[c.sourcePath]) : false}
+          waveformLoading={c.type === 'audio' ? (waveformPhase[c.sourcePath] ?? 'idle') === 'loading' : false}
+          waveformFailed={c.type === 'audio' ? (waveformPhase[c.sourcePath] ?? 'idle') === 'failed' : false}
           selected={c.id === selectedClipId}
           onSelect={() => onSelectClip(c.id)}
           onMoveClip={(ns) => onMoveClip(c.id, ns)}

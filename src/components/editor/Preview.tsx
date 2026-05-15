@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useProjectStore } from '../../store/projectStore'
 import { useEditorStore } from '../../store/editorStore'
-import type { VideoClip, ImageClip, AudioClip } from '../../lib/types'
+import type { AudioClip } from '../../lib/types'
 import { DEFAULT_COLOR_GRADE } from '../../lib/types'
 import { buildPreviewLookStyle } from '../../lib/previewLook'
 import { parseCubeLut } from '../../lib/lutCube'

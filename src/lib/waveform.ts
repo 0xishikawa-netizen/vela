@@ -91,7 +91,7 @@ export function sliceWaveformPeaksForClip(data: WaveformPeaks, clip: AudioClip):
 
 type ReadWaveformFileResult =
   | { ok: true; data: Uint8Array; mtimeMs: number; fileSize: number }
-  | { ok: false; reason: 'too_large' | 'error'; mtimeMs?: number; fileSize?: number }
+  | { ok: false; reason: 'too_large' | 'error' | 'not_allowlisted'; mtimeMs?: number; fileSize?: number }
 
 export type WaveformLoadDeps = {
   readAudioFileForWaveform?: (path: string) => Promise<ReadWaveformFileResult>
@@ -214,7 +214,16 @@ export async function loadWaveformPeaksForPath(filePath: string, deps: WaveformL
 
         try {
           wfLog(`decodeAudioData path=${ctxPath}`, { fileSize, mtimeMs })
-          const audioBuf = await ctx.decodeAudioData(ab)
+          const abForDecode: ArrayBuffer =
+            ab instanceof SharedArrayBuffer
+              ? (() => {
+                  const u = new Uint8Array(ab)
+                  const out = new ArrayBuffer(u.byteLength)
+                  new Uint8Array(out).set(u)
+                  return out
+                })()
+              : ab
+          const audioBuf = await ctx.decodeAudioData(abForDecode)
           const peaksData = generateWaveformPeaksFromAudioBuffer(audioBuf)
           if (peaksData.peaks.length > 0) {
             peakCache.set(ck, peaksData)
@@ -234,6 +243,11 @@ export async function loadWaveformPeaksForPath(filePath: string, deps: WaveformL
           })
         }
         return await ffmpegWaveformFallback(trim, deps, mtimeMs, { fileSize, reason: 'decode-fail-or-empty' })
+      }
+
+      if (!r.ok && r.reason === 'not_allowlisted') {
+        wfLog(`read not_allowlisted path=${ctxPath}`)
+        return null
       }
 
       mtimeHint = r.mtimeMs

@@ -1,6 +1,11 @@
 import { useUiToastStore } from '../store/uiToastStore'
 
-export type CubeLutReadFailureReason = 'not_found' | 'not_cube_extension' | 'too_large' | 'read_error'
+export type CubeLutReadFailureReason =
+  | 'not_found'
+  | 'not_cube_extension'
+  | 'too_large'
+  | 'read_error'
+  | 'not_allowlisted'
 
 export type LutPreviewFailureKind =
   | 'read_api_unavailable'
@@ -25,6 +30,8 @@ function messageForReadReason(reason: CubeLutReadFailureReason): string {
       return 'LUT ファイルが大きすぎます（32MB 上限）。別のファイルを選んでください。'
     case 'read_error':
       return 'LUT ファイルの読み込みに失敗しました。権限やディスクを確認してください。'
+    case 'not_allowlisted':
+      return 'LUT パスがセキュリティ許可リストにありません。ルックパネルから .cube を再度選択するか、プロジェクトを開き直してください。'
   }
 }
 
@@ -40,6 +47,7 @@ function messageForKind(kind: LutPreviewFailureKind, parseDetail?: string): stri
     case 'not_cube_extension':
     case 'too_large':
     case 'read_error':
+    case 'not_allowlisted':
       return messageForReadReason(kind)
     case 'parse_failed': {
       const d = parseDetail?.trim()

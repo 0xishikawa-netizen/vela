@@ -46,7 +46,7 @@ export interface ElectronAPI {
     filePath: string,
   ) => Promise<
     | { ok: true; data: Buffer; mtimeMs: number; fileSize: number }
-    | { ok: false; reason: 'too_large' | 'error'; mtimeMs?: number; fileSize?: number }
+    | { ok: false; reason: 'too_large' | 'error' | 'not_allowlisted'; mtimeMs?: number; fileSize?: number }
   >
 
   /** Phase C-2: main で UTF-8 読み込み。renderer は fs 直接禁止 */
@@ -54,8 +54,11 @@ export interface ElectronAPI {
     lutPath: string,
   ) => Promise<
     | { ok: true; text: string; mtimeMs: number; sizeBytes: number }
-    | { ok: false; reason: 'not_found' | 'not_cube_extension' | 'too_large' | 'read_error' }
+    | { ok: false; reason: 'not_found' | 'not_cube_extension' | 'too_large' | 'read_error' | 'not_allowlisted' }
   >
+
+  /** メディア系 IPC の読取許可リストへパスを追加（ダイアログ選択・プロジェクト読込・字幕 import 等） */
+  registerMediaAllowlistPaths?: (paths: string[]) => Promise<void>
 
   startExport: (project: object, settings: object) => Promise<void>
   /** 直近の書き出しで記録された診断（成功でクリア済みのことあり） */

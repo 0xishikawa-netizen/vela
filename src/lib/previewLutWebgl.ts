@@ -138,8 +138,8 @@ class PreviewLutRendererImpl implements PreviewLutRenderer {
   private readonly canvas: HTMLCanvasElement
   private program: WebGLProgram | null
   private buf: WebGLBuffer | null
-  private texSource: WebGLTexture | null
-  private texLut: WebGLTexture | null
+  private texSource: WebGLTexture | null = null
+  private texLut: WebGLTexture | null = null
   private loc: {
     a_pos: number
     a_uv: number
@@ -370,7 +370,7 @@ class PreviewLutRendererImpl implements PreviewLutRenderer {
 }
 
 export function createPreviewLutRenderer(canvas: HTMLCanvasElement): PreviewLutRenderer | null {
-  const gl =
+  const glMaybe =
     canvas.getContext('webgl', {
       alpha: true,
       premultipliedAlpha: false,
@@ -381,10 +381,11 @@ export function createPreviewLutRenderer(canvas: HTMLCanvasElement): PreviewLutR
       premultipliedAlpha: false,
     } as WebGLContextAttributes)
 
-  if (!gl) {
+  if (!glMaybe) {
     warnDev('WebGL context unavailable')
     return null
   }
+  const gl = glMaybe as WebGLRenderingContext
 
   const vs = compileShader(gl, gl.VERTEX_SHADER, VERT)
   const fs = compileShader(gl, gl.FRAGMENT_SHADER, FRAG)

@@ -26,6 +26,7 @@ function fmtSrtTime(sec: number): string {
 export default function AutoCaptionPanel() {
   const current = useProjectStore((s) => s.current)
   const addClip = useProjectStore((s) => s.addClip)
+  const api = typeof window !== 'undefined' ? window.electronAPI : undefined
 
   const [model, setModel] = useState('base')
   const [lang, setLang] = useState('ja')
@@ -42,39 +43,41 @@ export default function AutoCaptionPanel() {
       ?.clips.find((c) => c.type === 'video')?.sourcePath ?? ''
 
   useEffect(() => {
-    void window.electronAPI.listWhisperModels().then(setInstalled)
-  }, [])
+    if (!api?.listWhisperModels) return
+    void api.listWhisperModels().then(setInstalled)
+  }, [api])
 
   const hasModel = installed.some((f) => f.includes(model))
 
   const download = async () => {
+    if (!api?.downloadWhisperModel || !api.listWhisperModels) return
     setDownloading(true)
     setDlPct(0)
-    window.electronAPI.offDownloadProgress()
-    window.electronAPI.onDownloadProgress(setDlPct)
+    api.offDownloadProgress?.()
+    api.onDownloadProgress?.(setDlPct)
     try {
-      await window.electronAPI.downloadWhisperModel(model)
-      setInstalled(await window.electronAPI.listWhisperModels())
+      await api.downloadWhisperModel(model)
+      setInstalled(await api.listWhisperModels())
     } finally {
-      window.electronAPI.offDownloadProgress()
+      api.offDownloadProgress?.()
       setDownloading(false)
     }
   }
 
   const run = async () => {
-    if (!videoPath) return
+    if (!videoPath || !api?.transcribe) return
     setBusy(true)
     setTrPct(0)
-    window.electronAPI.offTranscribeProgress()
-    window.electronAPI.onTranscribeProgress(setTrPct)
+    api.offTranscribeProgress?.()
+    api.onTranscribeProgress?.(setTrPct)
     try {
-      const cap = await window.electronAPI.transcribe(videoPath, model, lang === 'auto' ? 'auto' : lang)
+      const cap = await api.transcribe(videoPath, model, lang === 'auto' ? 'auto' : lang)
       setCaptions(cap)
     } catch (e) {
       console.error(e)
       setCaptions([])
     } finally {
-      window.electronAPI.offTranscribeProgress()
+      api.offTranscribeProgress?.()
       setBusy(false)
     }
   }

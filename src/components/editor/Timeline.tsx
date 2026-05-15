@@ -75,14 +75,15 @@ export default function Timeline() {
 
   const snapPoints = useCallback(() => {
     if (!current) return [0]
-    const pts: number[] = [0, currentTime]
+    const ct = useEditorStore.getState().currentTime
+    const pts: number[] = [0, ct]
     for (const t of current.tracks) {
       for (const c of t.clips) {
         pts.push(c.timelineStart, c.timelineStart + c.timelineDuration)
       }
     }
     return pts
-  }, [current, currentTime])
+  }, [current])
 
   const onWheel = (e: React.WheelEvent) => {
     if (e.metaKey || e.ctrlKey) {

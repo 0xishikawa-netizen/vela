@@ -4,6 +4,7 @@ import { mkdir, readFile, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { app } from 'electron'
 
+import { allowlistMediaPaths } from '../mediaPathAllowlist'
 import type { WhisperLocalStartPayload } from '../../src/lib/types'
 import {
   buildWhisperLocalArgs,
@@ -401,6 +402,7 @@ export function registerWhisperLocalIpc(): void {
       return { ok: false, runId: badRunId, kind: 'validation', errorMessage: 'リクエストが不正です' }
     }
     const payload = raw
+    allowlistMediaPaths([payload.binaryPath, payload.modelPath, payload.sourceMediaPath])
 
     if (active) {
       return { ok: false, runId: payload.runId, kind: 'busy', errorMessage: '他のジョブが実行中です' }

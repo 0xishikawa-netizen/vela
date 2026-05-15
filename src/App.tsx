@@ -7,8 +7,14 @@ const ELECTRON_HELP =
   'この画面は Electron 内でのみ動作します。プロジェクト直下でターミナルから「npm run dev」を実行するか、dock の Vela が「npm run dev」で立ち上がったウィンドウを使ってください。'
 
 function electronApiReady(): boolean {
-  const api = typeof window !== 'undefined' ? window.electronAPI : undefined
-  return Boolean(api?.saveProject && api.loadProject && api.listProjects)
+  if (typeof window === 'undefined') return false
+  const api = window.electronAPI
+  if (!api) return false
+  return (
+    typeof api.listProjects === 'function' &&
+    typeof api.saveProject === 'function' &&
+    typeof api.loadProject === 'function'
+  )
 }
 
 export default function App() {

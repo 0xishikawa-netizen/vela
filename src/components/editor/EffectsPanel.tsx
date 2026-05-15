@@ -136,7 +136,9 @@ export default function EffectsPanel() {
   }
 
   const pickLut = async () => {
-    const p = await window.electronAPI.openLutDialog()
+    const api = typeof window !== 'undefined' ? window.electronAPI : undefined
+    if (!api?.openLutDialog) return
+    const p = await api.openLutDialog()
     if (p) updateClip(selectedTrackId, selectedClipId, { lutPath: p } as Partial<VideoClip | ImageClip>)
   }
 

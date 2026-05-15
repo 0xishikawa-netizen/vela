@@ -33,7 +33,7 @@ Phase C-3 — 色相 / 色温度
 
 残り課題
 
-1. LUT プレビューの本格検証: ピクセル一致・自動差分、長尺・極端解像度での実機性能と tetrahedral 近似の検証（読込失敗時のトースト案内は実装済み）。
+1. LUT プレビューの本格検証: ピクセル一致・自動差分・実機性能ベンチや tetrahedral 近似の検証、fallback UI の整備。
 2. 色の厳密一致: 色空間や温度の精密実装、LUT と他フィルターの結合順序検証、プレビューとエクスポートのピクセルレベル比較。
 3. カラーホイール相当の UI: 色相・温度の足場を利用して、より高度なカラーコントロールを追加。
 4. 著作権フリー LUT の同梱: 同梱 LUT のライセンス整理。
@@ -59,7 +59,7 @@ D-1 — ハードウェアエンコーダ
   - Windows（自動）: h264_nvenc / hevc_nvenc (-rc vbr -preset p4) を使用。
   - Windows（明示）: NVENC (h264_nvenc / hevc_nvenc)、QSV (h264_qsv / hevc_qsv)、AMF (h264_amf / hevc_amf) を利用可能。プリセットは中程度の品質設定。
   - ソフトウェア: libx264 / libx265 (-preset medium) にフォールバック。
-  - 未実装: Linux の VAAPI や自動 HW 選択。Linux からNVENCを明示した場合は NVENC を試みるが UI では Windows のみ選択可。
+  - 未実装: Linux の VAAPI や自動 HW 選択（`h264_vaapi` は filter_complex 側の `hwupload` / ピクセルフォーマット整合が必要なため、エンコーダ指定だけでは安全に有効化できない）。Linux から NVENC を明示した場合は NVENC を試みるが UI では Windows のみ選択可。
 - UI: ExportModal で「ソフト／自動／VideoToolbox／NVENC／QSV／AMF」を選択できる。自動設定では失敗時に1回だけソフトエンコードに再試行。
 - 実装: src/lib/exportVideoEncoder.ts で解決ロジックを定義し、electron/ffmpeg.ts でエンコーダー別のオプションを挿入。プレビューや音声チェーンは影響しない。
 - 回帰: npm run check:export-encoder で各 OS とエンコーダ組み合わせの純粋チェックを実施。CI では実際の GPU エンコードは検証せずロジックのみ検証する。
@@ -93,6 +93,7 @@ D-5 — 配布前 export smoke / プラットフォームチェックリスト
 Phase D 追加実装
 
 - **D-6 — VFR 対応**: 書き出し outputOptions に `-fps_mode cfr` を追加。VFR 入力ソースを含む場合でも CFR 出力を強制し、プレーヤー互換性を確保（ffmpeg 5+ / 旧バージョン共通フラグ）。
+- **D-7 — メディア読取 allowlist**: ダイアログで選択したパス・プロジェクト読込・字幕 import・Whisper 起動時の入力パスを main の `mediaPathAllowlist` に登録し、`media:getInfo` / `getThumbnail` / `getWaveform` / `readAudioFileForWaveform` / `readCubeLutFile` / `ai:transcribe` は未登録パスを拒否。`registerMediaAllowlistPaths` IPC で renderer から一括登録可能。
 
 Phase D 継続の残課題
 
@@ -181,6 +182,7 @@ Phase E 実装済み（追加）
 - **E-14 — 長尺音声チャンク化**: 600 秒超のメディアは FFmpeg で 300 秒ごとに WAV 分割→各チャンクへ Whisper spawn→セグメントの時刻オフセットを加算してマージ。`spawnWhisperOnFile` で spawn 処理を共通化。
 - **E-15 — GUIログビューア**: 失敗ジョブに `stderrTail`（最大 2KB）を保存。TranscriptionMockSection のジョブ行で `<details>` ログ展開 UI を追加。
 - **E-16 — 波形上の字幕ドラッグ UI**: `SubtitleTimelineTrack` コンポーネントを新設。Timeline に字幕トラック行（ラベル + バー）を追加し、ポインタドラッグで startSec / endSec を直接編集可能。
+- **E-17 — preload Whisper payload 検証**: `assertWhisperLocalStartPayload`（`src/lib/whisperLocalIpcMap.ts`）を `electron/preload.ts` で適用し、不正な `whisperLocal:start` ペイロードを main へ送る前に拒否する。
 
 Phase E 継続の残課題
 
@@ -207,40 +209,3 @@ Whisper 実装候補の整理
 - **クラウド API（OpenAI 等）**
   - **長所**: セットアップが軽い。
   - **課題**: オフライン方針・プライバシー・コストと衝突しやすいため、当面はローカル CLI を主軸とする。
-
----
-
-## 残課題サマリー（横断・一覧）
-
-各 Phase 節の詳細に加え、ここで未完を一望する。コード品質の追跡項目は `quality_review_and_fixes.md`（§4・§6・§10）を参照。
-
-### 色・LUT（Phase C）
-
-| 区分 | 内容 |
-|------|------|
-| C-2 | LUT プレビューと書き出しのピクセル比較・自動検証、長尺・極端解像度・補間の実測 |
-| C 横断 | 色の厳密一致、カラーホイール級 UI、著作権フリー LUT 同梱とライセンス整理 |
-
-### 書き出し・配布（Phase D）
-
-| 区分 | 内容 |
-|------|------|
-| D-1 未実装 | Linux **VAAPI**、Linux 上の **HW エンコーダ自動選択**（現状はソフトフォールバック中心） |
-| D 継続 | SNS 別プリセット細分化、実機アップロード互換の記録、長尺・シーン別のサイズ・ビットレート実測、stderr・診断ログサンプル蓄積、**クラッシュレポート連携** |
-| 任意 | エクスポート過程の stderr をアプリ内で常時閲覧する汎用ログビューア（診断ファイル保存・字幕ジョブの stderr 展開は別途あり） |
-
-### 字幕・Whisper（Phase E）
-
-| 区分 | 内容 |
-|------|------|
-| E 継続 | モデルマネージャ・ダウンロード導線、バイナリ同梱方針、他 OS の CLI 実測、複数トラック＋キーボード効率化、テロップ連携の洗練 |
-| 検証 | `preferGpu` の実機検証・CLI フラグ差の吸収、長尺チャンク境界の重複・欠落の実測とスムージング |
-
-### コード品質・セキュリティ（リポジトリ）
-
-| ID | 内容 |
-|----|------|
-| S-01 / D-1 | preload で Whisper ペイロードの簡易検証 |
-| S-02 / D-2 | メディア系 IPC のパス検証（ホワイトリスト等） |
-| M-03 / D-4 | waveform 状態の単一 enum 化 |
-| その他 | `Timeline` の snapPoints 最適化、字幕タイムラインの a11y、既存 TypeScript 警告の解消、`quality_review_and_fixes.xlsx` と MD の同期 |

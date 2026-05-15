@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 import type { WhisperLocalProgressIpcPayload } from '../src/lib/whisperLocalIpcMap'
+import { assertWhisperLocalStartPayload } from '../src/lib/whisperLocalIpcMap'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getRuntimePlatform: () =>
@@ -18,7 +19,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadWhisperLocalSettings: () => ipcRenderer.invoke('whisperLocalSettings:load'),
   saveWhisperLocalSettings: (data: object) => ipcRenderer.invoke('whisperLocalSettings:save', data),
 
-  startWhisperLocalTranscription: (payload: object) => ipcRenderer.invoke('whisperLocal:start', payload),
+  startWhisperLocalTranscription: (payload: unknown) => {
+    try {
+      return ipcRenderer.invoke('whisperLocal:start', assertWhisperLocalStartPayload(payload))
+    } catch (e) {
+      return Promise.reject(e instanceof Error ? e : new Error(String(e)))
+    }
+  },
   cancelWhisperLocalTranscription: (runId: string) => ipcRenderer.invoke('whisperLocal:cancel', runId),
   getWhisperLocalRunStatus: () => ipcRenderer.invoke('whisperLocal:getStatus'),
   onWhisperLocalProgress: (cb: (p: WhisperLocalProgressIpcPayload) => void) => {
@@ -45,14 +52,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       filePath,
     ) as Promise<
       | { ok: true; data: Buffer; mtimeMs: number; fileSize: number }
-      | { ok: false; reason: 'too_large' | 'error'; mtimeMs?: number; fileSize?: number }
+      | { ok: false; reason: 'too_large' | 'error' | 'not_allowlisted'; mtimeMs?: number; fileSize?: number }
     >,
 
   readCubeLutFile: (lutPath: string) =>
     ipcRenderer.invoke('media:readCubeLutFile', lutPath) as Promise<
       | { ok: true; text: string; mtimeMs: number; sizeBytes: number }
-      | { ok: false; reason: 'not_found' | 'not_cube_extension' | 'too_large' | 'read_error' }
+      | {
+          ok: false
+          reason: 'not_found' | 'not_cube_extension' | 'too_large' | 'read_error' | 'not_allowlisted'
+        }
     >,
+
+  registerMediaAllowlistPaths: (paths: string[]) => ipcRenderer.invoke('media:allowlistPaths', paths),
 
   startExport: (project: object, settings: object) => ipcRenderer.invoke('export:start', project, settings),
   getLastExportDiagnostics: () => ipcRenderer.invoke('export:getLastDiagnostics'),

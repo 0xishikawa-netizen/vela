@@ -2,7 +2,35 @@
  * Whisper local main IPC の結果・進捗を engine / UI 向けにマッピングする純粋ヘルパー（Phase E-7）。
  */
 
-import type { SubtitleSegment } from './types'
+import type { SubtitleSegment, WhisperLocalStartPayload } from './types'
+
+function nonEmptyString(v: unknown): v is string {
+  return typeof v === 'string' && v.trim().length > 0
+}
+
+/** preload から main へ渡す前に呼ぶ。不正なら例外。 */
+export function assertWhisperLocalStartPayload(v: unknown): WhisperLocalStartPayload {
+  if (v == null || typeof v !== 'object') throw new Error('Whisper payload はオブジェクトである必要があります')
+  const o = v as Record<string, unknown>
+  if (!nonEmptyString(o.runId)) throw new Error('runId が必要です')
+  if (!nonEmptyString(o.binaryPath)) throw new Error('binaryPath が必要です')
+  if (!nonEmptyString(o.modelPath)) throw new Error('modelPath が必要です')
+  if (!nonEmptyString(o.sourceMediaPath)) throw new Error('sourceMediaPath が必要です')
+  const out: WhisperLocalStartPayload = {
+    runId: o.runId.trim(),
+    binaryPath: o.binaryPath.trim(),
+    modelPath: o.modelPath.trim(),
+    sourceMediaPath: o.sourceMediaPath.trim(),
+  }
+  if (o.options != null && typeof o.options === 'object') {
+    out.options = o.options as WhisperLocalStartPayload['options']
+  }
+  if (typeof o.preferGpu === 'boolean') out.preferGpu = o.preferGpu
+  if (o.outputFormat === 'json' || o.outputFormat === 'srt' || o.outputFormat === 'vtt') {
+    out.outputFormat = o.outputFormat
+  }
+  return out
+}
 
 export type WhisperLocalIpcFailureKind =
   | 'validation'
