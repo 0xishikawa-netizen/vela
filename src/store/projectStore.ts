@@ -3,7 +3,6 @@ import { immer } from 'zustand/middleware/immer'
 import { v4 as uuid } from 'uuid'
 import type {
   Project,
-  Track,
   Clip,
   TrackType,
   AspectRatio,
@@ -27,8 +26,6 @@ import {
   parseSrt,
   parseVtt,
   sanitizeSubtitleSegment,
-  serializeSrt,
-  serializeVtt,
   sortSubtitleSegmentsByStart,
 } from '../lib/subtitleFormat'
 import { subtitleSegmentsToTelopClipPayloads } from '../lib/subtitleTelopBridge'
@@ -37,6 +34,7 @@ import { useHistoryStore } from './historyStore'
 import { useEditorStore } from './editorStore'
 import { clearTranscriptionJobsOnly, resetEditorSessionAndClearTranscriptionJobs } from './sessionActions'
 import { useTranscriptionStore } from './transcriptionStore'
+import { useUiToastStore } from './uiToastStore'
 import { transcriptionTrackNameFromSourcePath } from '../lib/transcriptionEngine'
 
 interface ProjectStore {
@@ -191,23 +189,35 @@ export const useProjectStore = create<ProjectStore>()(
     saveProject: async () => {
       const { current } = get()
       if (!current) return
-      const api = window.electronAPI
+      const api = typeof window !== 'undefined' ? window.electronAPI : undefined
       if (!api?.saveProject) return
-      const plain = cloneProject(current)
-      const updated = { ...plain, updatedAt: new Date().toISOString() }
-      await api.saveProject(updated.id, updated)
-      set((s) => {
-        s.current = cloneProject(updated)
-      })
+      try {
+        const plain = cloneProject(current)
+        const updated = { ...plain, updatedAt: new Date().toISOString() }
+        await api.saveProject(updated.id, updated)
+        set((s) => {
+          s.current = cloneProject(updated)
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'プロジェクトの保存に失敗しました'
+        useUiToastStore.getState().pushToast({ message: msg, variant: 'error', dedupeKey: 'save-project-fail' })
+        throw e
+      }
     },
 
     deleteProject: async (id) => {
-      const api = window.electronAPI
+      const api = typeof window !== 'undefined' ? window.electronAPI : undefined
       if (!api?.deleteProject) return
-      await api.deleteProject(id)
-      set((s) => {
-        s.projects = s.projects.filter((p) => p.id !== id)
-      })
+      try {
+        await api.deleteProject(id)
+        set((s) => {
+          s.projects = s.projects.filter((p) => p.id !== id)
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'プロジェクトを削除できませんでした'
+        useUiToastStore.getState().pushToast({ message: msg, variant: 'error', dedupeKey: 'delete-project-fail' })
+        throw e
+      }
     },
 
     closeProject: () => {
