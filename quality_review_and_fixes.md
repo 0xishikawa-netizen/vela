@@ -51,44 +51,40 @@
 
 ## 4. 未修正・要確認項目
 
-| # | 問題 | 未修正理由 | 対応方針 |
-|---|------|------------|---------|
-| S-01 | preload の Whisper ペイロード検証 | 設計変更に該当（preload の責務変更） | §10 設計変更提案 D-1 を参照 |
-| S-02 | メディアパスのホワイトリスト検証 | 設計変更に該当（IPC セキュリティモデル変更） | §10 設計変更提案 D-2 を参照 |
-| M-03 | waveform 状態の不整合リスク | 設計変更に該当（状態モデルのリファクタ） | §10 設計変更提案 D-4 を参照 |
-| P-01 | snapPoints 毎フレーム再生成 | 影響小（再生中のみ、配列生成コスト）。要実測 | 将来 optimization pass で対応 |
-| A-01 | SegmentBar アクセシビリティ | 機能影響なし。aria 属性追加のみ | 将来 a11y pass で対応 |
+**全項目対処済み。** 下表は経緯の記録。
+
+| # | 問題 | 最終状態 |
+|---|------|---------|
+| S-01 | preload の Whisper ペイロード検証 | **実装済み**（D-1 — `assertWhisperLocalStartPayload` を preload で適用） |
+| S-02 | メディアパスのホワイトリスト検証 | **実装済み**（D-2 — `mediaPathAllowlist.ts` で Set 管理） |
+| M-03 | waveform 状態の不整合リスク | **実装済み**（D-4 — `waveformPhase` Record に統合） |
+| P-01 | snapPoints 毎フレーム再生成 | **修正済み**（`currentTime` を deps から除去、`getState` 参照に変更） |
+| A-01 | SegmentBar アクセシビリティ | **修正済み**（`role="group"`, `aria-label` 追加） |
 
 ---
 
 ## 5. 実行結果
 
 ```
-npx tsc --noEmit 実行結果（修正後）:
+npx tsc --noEmit 実行結果（最終）:
 
-修正対象ファイル projectStore.ts → エラー 0 件
-
-残存する既存エラー（本修正とは無関係の pre-existing errors）:
-- src/lib/previewLutWebgl.ts: WebGL コンテキスト型エラー（3件）
-- src/lib/waveform.ts: SharedArrayBuffer 型エラー（1件）
-- src/components/ai/AutoCaptionPanel.tsx: window.electronAPI possibly undefined（8件）
-- src/components/editor/EffectsPanel.tsx: same（1件）
-- src/components/editor/MediaPanel.tsx: same（4件）
-- src/components/editor/Preview.tsx: 未使用 import（2件）
-- src/App.tsx / src/pages/Home.tsx: 条件式常にtrue（2件）
+エラー 0 件（完全クリーン）
+※ コミット bcf4c9a で previewLutWebgl / waveform / AutoCaptionPanel 等の
+  既存エラーも全て解消済み
 ```
 
 ---
 
-## 6. 残タスク
+## 6. 残タスク（品質レビュースコープ外）
 
-| タスク | 優先度 | 担当 |
+品質レビューで検出した全問題は対処済み。以下はロードマップ上の将来課題。
+
+| タスク | 優先度 | 備考 |
 |--------|--------|------|
-| S-01 preload 型検証強化 | Medium | 設計承認後に実装 |
-| S-02 メディアパス検証 | Medium | 設計承認後に実装 |
-| M-03 waveform 状態モデル改善 | Low | 設計承認後に実装 |
-| 既存 TypeScript エラー解消 | Low | 別 PR で対応推奨 |
-| A-01 aria 属性追加 | Low | a11y pass で対応 |
+| Whisper モデルマネージャ・ダウンロード導線の整備 | Medium | Phase E 継続課題 |
+| バンドル binary の配布方針策定 | Low | Phase E 継続課題 |
+| Linux VAAPI エンコーダ対応 | Low | filter_complex 整合が必要 |
+| 単体テスト整備（純粋関数: subtitleFormat, colorGradeFfmpeg 等） | Low | テスト容易性 ★★☆☆☆ の改善 |
 
 ---
 
@@ -104,9 +100,16 @@ npx tsc --noEmit 実行結果（修正後）:
 
 ## 8. 総合判定
 
-**修正可能な即時リスクは全て対処済み。**  
-saveProject の silent failure が最も重大なバグで、ディスク満杯・権限エラー時にユーザーがデータ消失に気づけなかった。今回の修正でエラートーストが表示されるようになった。  
-セキュリティ・設計面の残課題は §10 に提案としてまとめ、ユーザー承認後に実装する。
+**品質レビューで検出した全 10 問題が対処済み。TypeScript エラーもゼロ（完全クリーン）。**
+
+主な成果:
+- saveProject/deleteProject の silent failure → エラートーストで可視化
+- IPC セキュリティ: メディアパス allowlist + Whisper preload 型検証
+- ASPECT_RATIOS 二重定義 → `aspectRatios.ts` に単一化
+- waveform 状態の不整合リスク → `waveformPhase` Record に統合
+- aria / パフォーマンス / TS エラー 全て解消
+
+残るのはロードマップ上の機能追加課題のみ（§6 参照）。
 
 ---
 
