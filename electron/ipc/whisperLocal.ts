@@ -56,6 +56,7 @@ function appendCapped(buf: string, chunk: Buffer): string {
 }
 
 function sendProgress(sender: WebContents, runId: string, progress: number, detail?: string): void {
+  if (sender.isDestroyed()) return
   try {
     sender.send('whisperLocal:progress', { runId, progress, detail })
   } catch {

@@ -1,4 +1,4 @@
-import { ipcMain, dialog, type BrowserWindow } from 'electron'
+import { ipcMain, dialog, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { app } from 'electron'
@@ -7,6 +7,15 @@ import { buildExportDiagnosticsSaveDocument } from '../../src/lib/exportDiagnost
 
 function isExportDebugEnv(): boolean {
   return process.env.VELA_PHASE_A_DEBUG === '1' || process.env.VELA_EXPORT_DEBUG === '1'
+}
+
+function sendExportProgress(event: IpcMainInvokeEvent, pct: number): void {
+  if (event.sender.isDestroyed()) return
+  try {
+    event.sender.send('export:progress', pct)
+  } catch {
+    /* Renderer may have closed while ffmpeg is still emitting progress. */
+  }
 }
 
 export function registerExportIpc(getWindow: () => BrowserWindow | null) {
@@ -20,7 +29,7 @@ export function registerExportIpc(getWindow: () => BrowserWindow | null) {
   ipcMain.handle('export:start', async (event, project: object, settings: object) => {
     const { exportVideo } = await import('../ffmpeg')
     return exportVideo(project as import('../../src/lib/types').Project, settings as import('../../src/lib/types').ExportSettings, (pct) =>
-      event.sender.send('export:progress', pct),
+      sendExportProgress(event, pct),
     )
   })
 
